@@ -77,12 +77,14 @@ phase1-maps/
   consolidated/          # feature index, coverage matrix, completion gate
 ```
 
-Use it for:
+The whole point is to **break a codebase into features** so you — and an AI — can work on **one capability at a time** instead of fighting a giant, unfamiliar repo. Every feature exports as its own cited document, which changes how you work:
 
-- **Security review** — jump straight to a feature's endpoints, auth checks, and data flows, each at `file:line`.
-- **Static code review by feature** — review one capability end-to-end instead of guessing across the tree.
-- **Onboarding & architecture docs** — a real map of what exists and how it connects.
-- **AI context** — drop `AI_CONTEXT.md` + the graph into any model and ask about the code with citations.
+- **Security review, feature by feature** *(the main workflow)* — export a single feature's map: its endpoints, authorization checks, data flows, and the exact `file:line`s. Hand **just that one feature** to an AI (or review it yourself) and look for security issues. Because the context is small, scoped, and every claim is grounded to source, the review stays focused and the model doesn't hallucinate across code it's never seen. Walk the features one by one and you've covered the entire app **deliberately** — instead of dumping 100k lines into a prompt and hoping.
+- **Work with AI, locally** — drop `AI_CONTEXT.md` + a feature doc into any local model and it understands that slice of the code with **zero prior context** and full citations. No re-reading the repo, no guessing where things live.
+- **Many projects in one place** — the exported maps are just files, so you keep them as a **persistent local library** and jump between codebases without relearning each — a second-brain of every project you've mapped, always ready to work with.
+- **Static code review & onboarding** — review one capability end-to-end, or hand a new engineer the map instead of "go read the code."
+
+Every claim in every export is cited to `file:line`, so whatever you (or the AI) conclude is always traceable back to the source.
 
 ---
 

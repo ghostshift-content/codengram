@@ -7,51 +7,6 @@ import { slug } from '../schemas/index.js'
 const FEATURE_KINDS = new Set(['routes_endpoints', 'rest_api', 'graphql', 'workers_jobs', 'services_finders_policies',
   'response_shaping', 'tokens_actors', 'downloads_uploads_exports', 'search_aggregation'])
 
-const RULES = [
-  ['identity', 'authentication-sso', 'Authentication & SSO', /authentic|oauth|saml|ldap|openid|session|sign.?in|two.factor|2fa|password|identity/i],
-  ['identity', 'members-access', 'Members & Access', /member|membership|access.level|access_level|role.assignment|role_assignment/i],
-  ['identity', 'users-profile', 'Users & Profiles', /user|profile|account|avatar/i],
-  ['planning', 'issues-work-items', 'Issues & Work Items', /issue|work.item|work_item|todo/i],
-  ['planning', 'epics-portfolio', 'Epics & Portfolio', /epic|portfolio|roadmap/i],
-  ['planning', 'boards-milestones-labels', 'Boards, Milestones & Labels', /board|milestone|label/i],
-  ['collaboration', 'merge-requests', 'Merge Requests', /merge.request|merge_request|reviewer|approval/i],
-  ['collaboration', 'notes-discussions', 'Notes & Discussions', /note|discussion|comment/i],
-  ['collaboration', 'design-management', 'Design Management', /design.management|design_management/i],
-  ['source-code', 'repositories-git', 'Repositories & Git', /repository|repositories|commit|branch|tag|git\b/i],
-  ['source-code', 'protected-branch-rules', 'Protected Branch Rules', /protected.branch|branch.rule/i],
-  ['source-code', 'snippets', 'Snippets', /snippet/i],
-  ['source-code', 'wikis', 'Wikis', /wiki/i],
-  ['delivery', 'ci-cd-pipelines', 'CI/CD Pipelines', /pipeline|ci\/|ci_|continuous.integration/i],
-  ['delivery', 'runners', 'Runners', /runner/i],
-  ['delivery', 'releases-environments', 'Releases & Environments', /release|environment|deployment/i],
-  ['delivery', 'feature-flags', 'Feature Flags', /feature.flag/i],
-  ['delivery', 'pages', 'Pages', /pages/i],
-  ['operations', 'clusters-infra', 'Clusters & Infrastructure', /cluster|kubernetes|infrastructure/i],
-  ['operations', 'monitor-incidents', 'Monitoring & Incidents', /monitor|incident|alert|oncall/i],
-  ['operations', 'analytics-observability', 'Analytics & Observability', /analytics|metric|observability|tracking/i],
-  ['security', 'vulnerabilities', 'Vulnerabilities', /vulnerabilit|security.finding|security_finding/i],
-  ['security', 'security-policies', 'Security Policies', /security.policy|security_policy|scan.execution|approval.policy/i],
-  ['security', 'compliance-audit', 'Compliance & Audit', /compliance|audit.event|audit_event/i],
-  ['security', 'dependency-sbom', 'Dependencies & SBOM', /dependenc|sbom|license.scan/i],
-  ['security', 'anti-abuse', 'Anti-Abuse', /abuse|spam|rate.limit|throttl/i],
-  ['packages', 'packages', 'Packages', /package(?!.*registry)|npm|maven|nuget|composer/i],
-  ['packages', 'container-registry', 'Container Registry', /container.registry|container_registry|registry/i],
-  ['integrations', 'integrations-webhooks', 'Integrations & Webhooks', /integration|webhook|callback/i],
-  ['integrations', 'import-export', 'Import & Export', /import|export|migration/i],
-  ['integrations', 'uploads-files', 'Uploads & Files', /upload|attachment|file.storage|object.storage/i],
-  ['organization', 'projects', 'Projects', /project/i],
-  ['organization', 'groups-namespaces', 'Groups & Namespaces', /group|namespace/i],
-  ['organization', 'admin-settings', 'Administration & Settings', /admin|application.setting|settings/i],
-  ['commerce', 'subscriptions-billing', 'Subscriptions & Billing', /subscription|billing|invoice|payment|purchase/i],
-  ['commerce', 'crm-contacts', 'CRM & Contacts', /crm|contact|customer.relation/i],
-  ['support', 'service-desk', 'Service Desk', /service.desk|service_desk/i],
-  ['search', 'search', 'Search', /search|elasticsearch|zoekt/i],
-  ['ai', 'ai-duo', 'AI & Assistants', /duo|ai.gateway|ai_gateway|llm|model.gateway/i],
-  ['ai', 'ml', 'Machine Learning', /machine.learning|machine_learning|ml.model|model.registry/i],
-  ['development', 'workspaces-remote-dev', 'Workspaces & Remote Development', /workspace|remote.development/i],
-  ['platform', 'geo', 'Geo', /(^|\W)geo(\W|$)|replicat/i],
-  ['platform', 'cells', 'Cells', /(^|\W)cell(s)?(\W|$)|organization.cluster/i],
-]
 
 const titleize = (s) => String(s).replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 const singular = (s) => {
@@ -98,24 +53,9 @@ function fallbackKey(row) {
   return { domain: moduleOf(file), slug: noun, name: titleize(noun) }
 }
 
-function matchRule(row) {
-  const haystack = `${row.file || ''} ${row.entry || ''} ${row.detail || ''}`.replace(/[-_/]/g, ' ')
-  let best = null
-  for (const [domain, featureSlug, name, re] of RULES) {
-    const hits = haystack.match(re)
-    if (!hits) continue
-    const score = hits[0].length + (String(row.file).includes(featureSlug.replace(/-/g, '_')) ? 20 : 0)
-    if (!best || score > best.score) best = { domain, slug: featureSlug, name, score }
-  }
-  return best
-}
-
-// Public, deterministic business-capability classification for cross-cutting interface rows. A REST endpoint can
-// belong to the technical REST surface while also exposing Issues, Projects, Authentication, and so on.
-export function semanticFeatureForRow(row) {
-  const matched = matchRule(row)
-  return matched ? { domain: matched.domain, slug: matched.slug, name: matched.name } : null
-}
+// No hardcoded product taxonomy: cross-cutting business-capability correlation is disabled unless a stack plugin or
+// the AI Lead supplies grounded groupings. Features are derived purely from the code's own structure.
+export function semanticFeatureForRow() { return null }
 
 export function inventoryRows(inventories) {
   const rows = []
@@ -125,34 +65,23 @@ export function inventoryRows(inventories) {
   return rows
 }
 
-export function deterministicSemanticPlan(inventories, { taxonomyThreshold = 80, taxonomyFit = 0.6 } = {}) {
+// ONE universal rule for every language — NO hardcoded taxonomy. Features are derived from the code's own structure:
+// a large codebase clusters by MODULE directory (its real modules), a small one by capability NOUN. The same logic
+// runs for Ruby, PHP, Java, JS/TS, Python, Go, … Precision beyond structure comes from the AI Lead (validateLeadPlan),
+// which reads the actual code, or from a stack-specific plugin — never a curated product list.
+export function deterministicSemanticPlan(inventories, { moduleThreshold = 80 } = {}) {
   const rows = inventoryRows(inventories)
-  // The named taxonomy is domain-specific (GitLab-tuned). Its keywords (user/admin/upload/search/…) match loosely, so
-  // applied blindly it MISLABELS other apps (Nextcloud, Django, …) with GitLab feature names. Only use it when the repo
-  // genuinely FITS — a high fraction of rows match a rule. Otherwise cluster GENERICALLY by module (works for any stack).
-  const ruleMatch = rows.map((w) => matchRule(w.row))
-  const fit = rows.length ? ruleMatch.filter(Boolean).length / rows.length : 0
-  const bigRepo = rows.length >= taxonomyThreshold
-  // RULES is a curated product taxonomy, not a universal ontology. Generic rows often contain words such as user,
-  // file, project and search, which can make an unrelated codebase look like GitLab. Only select the taxonomy when
-  // most evidence came from precise stack plugins; universal repositories stay grouped by their own module layout.
-  const preciseRatio = rows.length ? rows.filter((w) => w.row.plugin && w.row.plugin !== 'universal').length / rows.length : 0
-  const useTaxonomy = bigRepo && preciseRatio >= 0.6 && fit >= taxonomyFit
+  const bigRepo = rows.length >= moduleThreshold
   const features = new Map()
-  rows.forEach((wrapped, i) => {
-    // 3 strategies: small repo → noun cohesion (precise); big + fits taxonomy → named capabilities (GitLab-style);
-    // big + generic → MODULE/directory clustering, so a large flat codebase yields tens of modules, not one-per-file.
-    const matched = useTaxonomy ? ruleMatch[i] : null
-    const selected = matched || (useTaxonomy
-      ? { domain: 'platform', slug: 'supporting-capabilities', name: 'Supporting Application Capabilities', score: 0 }
-      : bigRepo ? moduleCluster(wrapped.row) : fallbackKey(wrapped.row))
-    const method = useTaxonomy ? (matched ? 'semantic-taxonomy' : 'coverage-catchall') : bigRepo ? 'module-cohesion' : 'local-cohesion'
-    const key = useTaxonomy ? `${selected.domain}/${selected.slug}` : bigRepo ? `mod/${selected.slug}` : selected.slug
+  for (const wrapped of rows) {
+    const selected = bigRepo ? moduleCluster(wrapped.row) : fallbackKey(wrapped.row)
+    // small repo → merge by capability NOUN (across dirs); large repo → by MODULE directory.
+    const key = bigRepo ? `${selected.domain}/${selected.slug}` : selected.slug
     if (!features.has(key)) features.set(key, { slug: selected.slug, domain: selected.domain, name: selected.name, rows: [],
-      confidence: matched ? 'medium' : 'low', planning_method: method })
-    else if (!useTaxonomy && !bigRepo && features.get(key).domain === 'core' && selected.domain !== 'core') features.get(key).domain = selected.domain
+      confidence: 'low', planning_method: bigRepo ? 'module-cohesion' : 'local-cohesion' })
+    else if (!bigRepo && features.get(key).domain === 'core' && selected.domain !== 'core') features.get(key).domain = selected.domain
     features.get(key).rows.push({ kind: wrapped.kind, row: wrapped.row })
-  })
+  }
   return [...features.values()].sort((a, b) => a.domain.localeCompare(b.domain) || a.slug.localeCompare(b.slug))
 }
 
@@ -209,4 +138,4 @@ export function validateLeadPlan(plan, inventories) {
   return merged.size ? [...merged.values()] : null
 }
 
-export const semanticTaxonomy = () => RULES.map(([domain, featureSlug, name]) => ({ domain, slug: featureSlug, name }))
+export const semanticTaxonomy = () => []   // no hardcoded taxonomy — features come from the code's structure

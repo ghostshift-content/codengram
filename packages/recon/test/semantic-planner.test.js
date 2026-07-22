@@ -7,15 +7,16 @@ import { INVENTORY_KEYS } from '../../plugins/index.js'
 const empty = () => Object.fromEntries(INVENTORY_KEYS.map((k) => [k, []]))
 const rowCount = (features) => features.reduce((n, f) => n + f.rows.length, 0)
 
-test('large repositories consolidate implementation rows into bounded business capabilities', () => {
+test('large repositories consolidate into bounded modules from their OWN structure (no hardcoded taxonomy)', () => {
   const inv = empty()
-  for (let i = 0; i < 120; i++) inv.graphql.push({ file: `app/graphql/types/issue_${i}_type.rb`, line: 1, entry: `field :issue_${i}`, detail: 'graphql-field', plugin: 'rails' })
-  for (let i = 0; i < 40; i++) inv.services_finders_policies.push({ file: `app/services/internal/helper_${i}.rb`, line: 1, entry: `helper_${i}.rb`, detail: 'service', plugin: 'rails' })
+  for (let i = 0; i < 120; i++) inv.graphql.push({ file: `src/billing/issue_${i}.rb`, line: 1, entry: `field :issue_${i}`, detail: 'graphql-field', plugin: 'rails' })
+  for (let i = 0; i < 40; i++) inv.services_finders_policies.push({ file: `src/reporting/helper_${i}.rb`, line: 1, entry: `helper_${i}.rb`, detail: 'service', plugin: 'rails' })
   const plan = deterministicSemanticPlan(inv)
-  assert.ok(plan.some((f) => f.slug === 'issues-work-items'))
-  assert.ok(plan.some((f) => f.slug === 'supporting-capabilities'))
-  assert.ok(plan.length < 10, `expected semantic consolidation, got ${plan.length}`)
+  assert.ok(plan.length < 10, `expected module consolidation, got ${plan.length}`)
   assert.equal(rowCount(plan), 160, 'no inventory row is dropped')
+  assert.ok(plan.some((f) => f.slug === 'billing') && plan.some((f) => f.slug === 'reporting'), 'features derived from the code’s modules')
+  assert.ok(!plan.some((f) => f.slug === 'issues-work-items' || f.slug === 'supporting-capabilities'), 'no curated product taxonomy')
+  assert.ok(plan.every((f) => f.planning_method === 'module-cohesion'))
 })
 
 test('large universal repositories use their own modules, never the curated product taxonomy', () => {
@@ -43,15 +44,16 @@ test('Lead selectors use strongest-match assignment, not feature-list order', ()
   assert.equal(rowCount(features), 2, 'each row is assigned exactly once')
 })
 
-test('Lead and fallback rows resolving to the same feature are coalesced', () => {
+test('Lead keeps the rows its selectors claim; unmatched rows go to a module fallback (no taxonomy coalescing)', () => {
   const inv = empty()
   inv.services_finders_policies.push({ file: 'app/services/issues/create_issue_service.rb', line: 1, entry: 'CreateIssueService', detail: 'service', plugin: 'rails' })
-  for (let i = 0; i < 80; i++) inv.graphql.push({ file: `app/graphql/types/issue_${i}_type.rb`, line: 3, entry: `field :issue_${i}`, detail: 'graphql-field', plugin: 'rails' })
+  for (let i = 0; i < 80; i++) inv.graphql.push({ file: `src/billing/issue_${i}.rb`, line: 3, entry: `field :issue_${i}`, detail: 'graphql-field', plugin: 'rails' })
   const plan = { features: [{ name: 'Issues', slug: 'issues-work-items', domain: 'planning', purpose: 'Issue workflows',
     include_paths: ['app/services/issues'], include_terms: [] }] }
   const features = validateLeadPlan(plan, inv)
-  const issues = features.filter((f) => f.domain === 'planning' && f.slug === 'issues-work-items')
-  assert.equal(issues.length, 1)
-  assert.equal(issues[0].rows.length, 81)
-  assert.equal(issues[0].planning_method, 'agent-lead')
+  const issues = features.find((f) => f.slug === 'issues-work-items')
+  assert.equal(issues.rows.length, 1, 'Lead claims the service it selected by path')
+  assert.equal(rowCount(features), 81, 'no inventory row is dropped')
+  // the 80 unmatched rows are placed by their OWN module, not folded into the Lead feature via a hardcoded taxonomy
+  assert.ok(features.some((f) => f.slug === 'billing' && f.planning_method === 'lead-gap-fallback'))
 })

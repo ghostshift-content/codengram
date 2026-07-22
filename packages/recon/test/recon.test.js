@@ -94,7 +94,7 @@ test('a semantic catch-all is covered but remains an explicit completion gap', (
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-test('a technical REST surface also links endpoints to their business capability', () => {
+test('endpoints are exposed by their OWNING feature; no hardcoded-taxonomy cross-links are invented', () => {
   const inv = Object.fromEntries(['routes_endpoints','rest_api','graphql','workers_jobs','services_finders_policies','response_shaping','downloads_uploads_exports','search_aggregation','tokens_actors','processes_ipc','datastores_integrations'].map((k) => [k, []]))
   inv.rest_api.push({ file: 'lib/api/issues.rb', line: 10, entry: "GET '/issues'", detail: 'grape', method: 'GET', path: '/issues', api_class: 'API::Issues' })
   const plan = [
@@ -104,8 +104,12 @@ test('a technical REST surface also links endpoints to their business capability
   const g = openGraph()
   buildGraph(g, { project: { id: 'project:test', name: 'test' }, snapshot: { id: 'snapshot:test', file_count: 1 },
     profile: { languages: ['Ruby'] }, inventories: inv, featurePlan: plan })
-  const linked = g.prepare(`SELECT 1 FROM edges WHERE src=? AND type='EXPOSES'`).get(ID.feature('planning', 'issues-work-items'))
-  assert.ok(linked, 'business feature receives a secondary EXPOSES edge to its REST endpoint')
+  const owned = g.prepare(`SELECT 1 FROM edges WHERE src=? AND type='EXPOSES'`).get(ID.feature('interfaces', 'rest-api'))
+  assert.ok(owned, 'endpoint is exposed by its owning feature')
+  // The endpoint's path contains "issues", but with NO hardcoded taxonomy there is no invented cross-link to a
+  // business capability the Lead did not map to it.
+  const invented = g.prepare(`SELECT 1 FROM edges WHERE src=? AND type='EXPOSES'`).get(ID.feature('planning', 'issues-work-items'))
+  assert.ok(!invented, 'no cross-link is fabricated from a curated taxonomy')
 })
 
 test('#2 an unsupported stack maps its source but reports generic semantics as a gap', async () => {
@@ -170,4 +174,20 @@ test('#3 a render/integrity failure aborts the publish — the previous brain is
   await assert.rejects(() => scanSnapshot(dataRoot, project.id, { agentic: false, render: () => ({ crosscheck: { ok: false, graph: 9, markdown: 1 } }) }), /NOT published/)
   assert.equal(latestPublished(dataRoot, project.id).publication.mission_id, good.missionId, 'still the good v1')
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
+})
+
+test('roles/permissions are derived from the authorization code, never a fixed vocabulary', () => {
+  const kinds = ['routes_endpoints','rest_api','graphql','workers_jobs','services_finders_policies','response_shaping','downloads_uploads_exports','search_aggregation','tokens_actors','processes_ipc','datastores_integrations']
+  const inv = Object.fromEntries(kinds.map((k) => [k, []]))
+  inv.tokens_actors.push({ file: 'lib/Controller/FilesController.php', line: 3, entry: '#[AdminRequired] #[PublicPage]', detail: 'auth' })
+  inv.tokens_actors.push({ file: 'src/UserApi.java', line: 5, entry: '@RolesAllowed("EDITOR") hasRole(\'MODERATOR\')', detail: 'auth' })
+  inv.tokens_actors.push({ file: 'app/Http/routes.php', line: 8, entry: '$user->hasRole("billing-admin")', detail: 'auth' })
+  const g = openGraph()
+  buildGraph(g, { project: { id: 'project:t', name: 't' }, snapshot: { id: 'snapshot:t', file_count: 3 }, profile: { languages: ['PHP','Java'] }, inventories: inv })
+  const roles = nodesByType(g, 'ROLE').map((r) => r.name)
+  // exactly the tokens the code names — nothing invented
+  assert.ok(roles.some((r) => /AdminRequired/i.test(r)) && roles.some((r) => /PublicPage/i.test(r)), 'PHP attributes surfaced')
+  assert.ok(roles.some((r) => /EDITOR/i.test(r)) && roles.some((r) => /MODERATOR/i.test(r)), 'annotation + hasRole literals surfaced')
+  assert.ok(roles.some((r) => /billing/i.test(r)), 'quoted role name surfaced')
+  assert.ok(!roles.some((r) => /^Owner$/i.test(r)), 'no hardcoded role appears when the code does not name it')
 })

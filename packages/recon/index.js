@@ -46,23 +46,39 @@ export function clusterFeatures(inventories) {
   return deterministicSemanticPlan(inventories)
 }
 
-const identityWords = /\b(anonymous|guest|member|reporter|developer|maintainer|owner|admin|staff|system)\b/gi
-const permissionWords = /(?:can\?|allowed\?|authorize!?|permission)[^\n:]{0,30}:([a-z][a-z0-9_]*)/gi
+// Roles & permissions are whatever the AUTHORIZATION CODE actually names — derived generically from the captured auth
+// line (annotations/attributes, quoted role names, ROLE_/PERMISSION_ constants, ability symbols). NO fixed vocabulary;
+// the SAME rule runs for every language. The AI Lead refines these when connected.
+function accessTokensFrom(text) {
+  const roles = new Set(), perms = new Set()
+  const norm = (s) => String(s || '').trim().replace(/^ROLE[_-]/i, '').slice(0, 40)
+  const keep = (v, set) => { const n = norm(v); if (n && slug(n)) set.add(n) }
+  // access-control annotations / attributes whose NAME is the level itself: #[AdminRequired], #[PublicPage]. Skip
+  // wrapper annotations that take the role as an argument (handled below) so we record the role, not the wrapper.
+  const WRAPPER = /^(RolesAllowed|PreAuthorize|PostAuthorize|Secured|Authorize|IsGranted|RequirePermission|PermitAll|DenyAll)$/i
+  for (const m of text.matchAll(/[@#]\[?\s*([A-Za-z][A-Za-z0-9]{2,40})/g))
+    if (!WRAPPER.test(m[1]) && /require|admin|role|secur|auth|public|anonym|grant|permission|guard|access|login|restrict|scope|owner|member|moderat|editor|viewer|permit|deny/i.test(m[1])) keep(m[1], roles)
+  // quoted role / permission names inside authorization calls or wrapper annotations
+  for (const m of text.matchAll(/\b(?:hasRole|hasAnyRole|hasAuthority|isGranted|requireRole|RolesAllowed|PreAuthorize|PostAuthorize|Secured|Authorize|RequirePermission|role|scope|ability|authorize|allowed|grant|permission|require|can)\b[^'"\n]{0,20}(['"])([A-Za-z][\w.:/ -]{1,40})\1/gi)) keep(m[2], roles)
+  // ROLE_ / PERMISSION_ / SCOPE_ constants
+  for (const m of text.matchAll(/\b(?:ROLE|PERMISSION|SCOPE|GRANT|ABILITY|CAP)_([A-Za-z][A-Za-z0-9_]{1,40})\b/g)) keep(m[1], roles)
+  // ability symbols (e.g. Ruby can? :manage, authorize! :read)
+  for (const m of text.matchAll(/(?:can\??|cannot|authorize!?|allowed\??|ability)\s*[!(]?\s*:([a-z][a-z0-9_]{2,40})/gi)) keep(m[1], perms)
+  return { roles: [...roles].slice(0, 15), perms: [...perms].slice(0, 15) }
+}
 
 function addIdentityContext(g, snapshot_id, featureId, authNodeId, row) {
-  const text = `${row.entry || ''} ${row.file || ''}`
-  const roles = [...new Set([...text.matchAll(identityWords)].map((m) => m[1].toLowerCase()))]
-  const permissions = [...new Set([...text.matchAll(permissionWords)].map((m) => m[1].toLowerCase()))]
+  const { roles, perms } = accessTokensFrom(String(row.entry || ''))
   for (const role of roles) {
     const roleId = ID.role(role)
-    upsertNode(g, { type: 'ROLE', id: roleId, name: titleize(role), snapshot_id, data: { source: row.file, line: row.line } })
+    upsertNode(g, { type: 'ROLE', id: roleId, name: titleize(role.replace(/[_-]+/g, ' ')), snapshot_id, data: { source: row.file, line: row.line } })
     upsertEdge(g, { type: 'REQUIRES_ROLE', from: authNodeId || featureId, to: roleId, snapshot_id })
     addClaim(g, { id: `c:${roleId}:observed:${row.file}:${row.line}`, node_id: roleId, field: 'observed', snapshot_id,
       file: row.file, line_start: row.line, confidence: 'medium', method: 'grep' })
   }
-  for (const permission of permissions) {
+  for (const permission of perms) {
     const permissionId = `permission:${slug(permission)}`
-    upsertNode(g, { type: 'PERMISSION', id: permissionId, name: permission.replace(/_/g, ' '), snapshot_id,
+    upsertNode(g, { type: 'PERMISSION', id: permissionId, name: permission.replace(/[_-]+/g, ' '), snapshot_id,
       data: { source: row.file, line: row.line } })
     upsertEdge(g, { type: 'AUTHORIZED_BY', from: featureId, to: permissionId, snapshot_id })
     addClaim(g, { id: `c:${permissionId}:observed:${row.file}:${row.line}`, node_id: permissionId, field: 'observed',

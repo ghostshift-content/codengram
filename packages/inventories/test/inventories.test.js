@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { profileRepo } from '../../profiler/index.js'
-import { extractInventories, writeInventories, builtinRegistry } from '../index.js'
+import { extractInventories, writeInventories, builtinRegistry, inventoryMeta } from '../index.js'
 import { INVENTORY_KEYS } from '../../plugins/index.js'
 
 // A small Rails-shaped fixture — enough to exercise each extractor.
@@ -167,4 +167,38 @@ test('a polyglot Rails repository also maps uncovered non-Ruby modules', () => {
   assert.ok(inv.routes_endpoints.some((r) => r.plugin === 'rails'), 'Rails precision preserved')
   assert.ok(inv.rest_api.some((r) => r.plugin === 'universal' && r.file.endsWith('users.ts')), 'uncovered TypeScript API mapped')
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('a specialized plugin adds precision but never claims files it did not represent (universal still anchors them)', () => {
+  const dir = railsFixture()
+  write(dir, 'app/lib/opaque.rb', "module Opaque\n  X = 1\nend\n")   // rails plugin does not map this .rb file
+  const inv = extractInventories({ sourceRoot: dir, profile: profileRepo(dir) })
+  const opaque = INVENTORY_KEYS.flatMap((k) => inv[k]).find((r) => r.file.endsWith('opaque.rb'))
+  assert.ok(opaque && opaque.plugin === 'universal', 'the plugin-unrepresented .rb is still covered by a universal anchor')
+  assert.equal(inventoryMeta(inv).unrepresented_source_files, 0, 'no snapshotted code file is left uncounted')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('advertised languages the profiler snapshots all map + are counted (one canonical predicate, no zero-mapping)', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-poly-'))
+  write(d, 'Bank.lhs', '> module Bank where\n> transfer = undefined\n')       // Haskell literate
+  write(d, 'PAYROLL.cbl', 'IDENTIFICATION DIVISION.\nPROGRAM-ID. PAYROLL.\n')  // COBOL
+  write(d, 'Api.fsi', 'module Api\nval handler : unit -> unit\n')             // F# signature
+  write(d, 'home.pug', 'html\n  body\n    h1 Home\n')                          // Pug template
+  const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d) })
+  const meta = inventoryMeta(inv)
+  assert.equal(meta.source_code_files, 4, 'every snapshotted code/template file is counted as source')
+  assert.equal(meta.unrepresented_source_files, 0, 'none vanish from coverage (no narrower private list)')
+  fs.rmSync(d, { recursive: true, force: true })
+})
+
+test('OpenAPI contracts are recognized by content — non-blessed filenames + quoted YAML paths', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-spec-'))
+  write(d, 'api-spec.json', JSON.stringify({ openapi: '3.0.0', paths: { '/users': { get: { summary: 'list' } } } }))
+  write(d, 'api-spec.yaml', 'openapi: 3.0.0\npaths:\n  "/accounts":\n    get:\n    post:\n')
+  const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d) })
+  const ops = inv.rest_api.filter((r) => r.detail === 'openapi').map((r) => r.entry)
+  assert.ok(ops.includes("GET '/users'"), 'content-detected JSON spec maps its operations')
+  assert.ok(ops.includes("GET '/accounts'") && ops.includes("POST '/accounts'"), 'quoted-path YAML spec maps its operations')
+  fs.rmSync(d, { recursive: true, force: true })
 })

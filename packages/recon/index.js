@@ -11,7 +11,7 @@ import { profileRepo } from '../profiler/index.js'
 import { extractInventories, inventoryMeta, INVENTORY_EXTRACTOR_VERSION } from '../inventories/index.js'
 import { INVENTORY_KEYS } from '../plugins/index.js'
 import { openGraph, upsertNode, upsertEdge, addClaim, addReconItem, reconCounts, reconTotal, mergeStaging, counts, nodesByType } from '../graph/index.js'
-import { ID, slug } from '../schemas/index.js'
+import { ID, slug, safeRelPath } from '../schemas/index.js'
 import { createSnapshot, getProject, sourceRootDir, snapshotDir, listSnapshots } from '../ingestion/index.js'
 import { deterministicSemanticPlan, validateLeadPlan, semanticFeatureForRow } from './semantic-planner.js'
 import { planRecon } from '../claude-runtime/index.js'
@@ -145,7 +145,7 @@ function nodeForRow(g, snapshot_id, featureId, kind, row) {
 
 // Build the full graph (into `g`) from clusters + infra; return reconciliation + gate results.
 // onProgress(ev) receives granular live events (per-feature, shares, infra) for the recon UI.
-export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, onProgress = () => {} }) {
+export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, readSource = null, onProgress = () => {} }) {
   const sid = snapshot.id
   const before = () => counts(g).nodes
   upsertNode(g, { type: 'PROJECT', id: project.id, name: project.name, snapshot_id: sid, data: { languages: profile.languages, frameworks: profile.frameworks } })
@@ -157,6 +157,7 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
   const domains = new Set()
   const serviceUsers = new Map()   // serviceNodeId -> Set(featureId)  → SHARES_IMPLEMENTATION_WITH (§14.6)
   const interfaceNodes = []        // cross-cutting interfaces may expose both a technical surface and a business feature
+  const classOwners = new Map()    // ClassName -> Set(featureId): a feature's own class files, for reference correlation
   let mapped = 0
   onProgress({ kind: 'features_planned', count: features.length, domains: [...new Set(features.map((f) => f.domain))], label: `Discovered ${features.length} features across ${new Set(features.map((f) => f.domain)).size} domains` })
 
@@ -165,6 +166,16 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
     const publicSlug = slugCounts.get(f.slug) > 1 ? `${f.domain}-${f.slug}` : f.slug
     if (!domains.has(f.domain)) { domains.add(f.domain); upsertNode(g, { type: 'DOMAIN', id: domId, name: titleize(f.domain), snapshot_id: sid }); upsertEdge(g, { type: 'CONTAINS', from: project.id, to: domId, snapshot_id: sid }) }
     const files = new Set(f.rows.map((r) => r.row.file))
+    // record this feature's distinctive class names (CamelCase file basenames), so an endpoint whose handler file
+    // references one of them can be correlated to this capability across directory boundaries (code-derived, no list).
+    for (const file of files) {
+      const base = String(file).split('/').pop().replace(/\.\w+$/, '')
+      if (base.length >= 5 && /[A-Z]/.test(base) && /^[A-Za-z]\w*$/.test(base)) {
+        for (const nm of /^I[A-Z]/.test(base) ? [base, base.slice(1)] : [base]) {   // interface → its impl name too
+          if (!classOwners.has(nm)) classOwners.set(nm, new Set()); classOwners.get(nm).add(featId)
+        }
+      }
+    }
     const n0 = before()
     upsertNode(g, { type: 'FEATURE', id: featId, name: f.name, snapshot_id: sid, data: { domain: f.domain, slug: publicSlug, canonical_slug: f.slug,
       files: [...files], row_count: f.rows.length, purpose: featurePurpose(f), planning_method: f.planning_method || 'deterministic',
@@ -182,16 +193,28 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
     onProgress({ kind: 'feature_mapped', feature: f.name, slug: publicSlug, domain: f.domain, rows: f.rows.length, added: before() - n0, label: `Mapped ${f.name} (${f.domain}) — +${before() - n0} nodes` })
   }
 
-  // Lead plans often create technical features such as "REST API Surface". Preserve that ownership, but add a
-  // second EXPOSES edge to the deterministic business capability so Issues pages contain Issues REST endpoints,
-  // GraphQL operations, and workers rather than losing them to a technology-only bucket.
-  const plannedFeatureIds = new Set(features.map((f) => ID.feature(f.domain, f.slug)))
-  for (const item of interfaceNodes) {
-    const semantic = semanticFeatureForRow(item.row)
-    if (!semantic) continue
-    const target = ID.feature(semantic.domain, semantic.slug)
-    if (target !== item.primary && plannedFeatureIds.has(target)) upsertEdge(g, { type: 'EXPOSES', from: target, to: item.nid, snapshot_id: sid,
-      data: { relationship: 'business-capability-correlation', inventory_kind: item.kind } })
+  // Capability correlation (code-derived, NO taxonomy): an endpoint/handler/job belongs to a feature's capability when
+  // its FILE references that feature's class BY NAME — a real import/type/call reference. This surfaces, e.g., the
+  // controllers that use AccountManager under the Account feature, across directory boundaries, grounded in the code.
+  if (readSource && classOwners.size) {
+    // correlate only from REAL CODE (a generated spec like openapi.json mentions every class → false positives)
+    const CODE_FILE = /\.(js|jsx|ts|tsx|mjs|cjs|php|py|rb|go|java|kt|kts|scala|sc|cs|swift|vue|svelte|cfc|cfm|cfml|vb|fs|razor|cshtml|aspx|jsp|rs|ex|exs|erl|clj|cljs|groovy|dart|lua|jl|nim|cr|hs|ml|c|cc|cpp|cxx|h|hpp|m|mm|pl|pm)$/i
+    const byFile = new Map()   // handler file → the interface nodes defined in it (dedupe file reads)
+    for (const item of interfaceNodes) { const file = item.row.file; if (!file || !CODE_FILE.test(file)) continue; if (!byFile.has(file)) byFile.set(file, []); byFile.get(file).push(item) }
+    let correlated = 0
+    for (const [file, items] of byFile) {
+      const content = readSource(file); if (!content || content.length > 400_000) continue   // skip huge generated files
+      const tokens = new Set(content.match(/\b[A-Z][A-Za-z0-9]{4,40}\b/g) || [])   // CamelCase identifiers referenced
+      const feats = new Set()
+      for (const t of tokens) { const owners = classOwners.get(t); if (owners) for (const fid of owners) feats.add(fid) }
+      if (feats.size > 10) continue   // a hub file referencing many features is low-signal — skip
+      for (const fid of feats) for (const item of items) {
+        if (fid === item.primary) continue                                        // already its primary feature
+        upsertEdge(g, { type: 'EXPOSES', from: fid, to: item.nid, snapshot_id: sid, data: { relationship: 'capability-reference', inventory_kind: item.kind } })
+        correlated++
+      }
+    }
+    if (correlated) onProgress({ kind: 'correlation', count: correlated, label: `Correlated ${correlated} endpoint↔capability references from source` })
   }
 
   // §14.6 — a service/auth-check used by ≥2 features links those features as sharing implementation.
@@ -327,7 +350,8 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
       staging = openGraph(path.join(attempt, 'staging.sqlite'))
       staging.exec('BEGIN')
       try {
-        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, onProgress })
+        const readSource = (rel) => { try { return fs.readFileSync(path.join(src, safeRelPath(rel)), 'utf8') } catch { return '' } }
+        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, readSource, onProgress })
         staging.exec('COMMIT')
         mission.workstreams = mission.workstreams.map((w) => ({ ...w, status: 'COMPLETED', completed_at: new Date().toISOString() }))
         mission.completed_at = new Date().toISOString()

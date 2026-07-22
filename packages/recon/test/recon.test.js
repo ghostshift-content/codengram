@@ -112,6 +112,31 @@ test('endpoints are exposed by their OWNING feature; no hardcoded-taxonomy cross
   assert.ok(!invented, 'no cross-link is fabricated from a curated taxonomy')
 })
 
+test('an endpoint whose handler references another feature\'s class is cross-linked to it (code-derived, any language)', () => {
+  const inv = Object.fromEntries(['routes_endpoints','rest_api','graphql','workers_jobs','services_finders_policies','response_shaping','downloads_uploads_exports','search_aggregation','tokens_actors','processes_ipc','datastores_integrations'].map((k) => [k, []]))
+  inv.services_finders_policies.push({ file: 'lib/Accounts/AccountManager.php', line: 1, entry: 'AccountManager', detail: 'service' })  // Account owns this class
+  inv.rest_api.push({ file: 'apps/settings/SettingsController.php', line: 20, entry: "GET '/settings/account'", detail: 'route', method: 'GET' })  // endpoint clustered under Settings
+  const plan = [
+    { domain: 'core', slug: 'account', name: 'Account', rows: [{ kind: 'services_finders_policies', row: inv.services_finders_policies[0] }], planning_method: 'test' },
+    { domain: 'apps', slug: 'settings', name: 'Settings', rows: [{ kind: 'rest_api', row: inv.rest_api[0] }], planning_method: 'test' },
+  ]
+  const readSource = (rel) => rel === 'apps/settings/SettingsController.php' ? 'class SettingsController { function account() { return new AccountManager(); } }' : ''
+  const g = openGraph()
+  buildGraph(g, { project: { id: 'project:corr', name: 'corr' }, snapshot: { id: 'snapshot:corr', file_count: 2 },
+    profile: { languages: ['PHP'] }, inventories: inv, featurePlan: plan, readSource })
+  const link = g.prepare(`SELECT json_extract(data,'$.relationship') rel FROM edges WHERE src=? AND type='EXPOSES'`).get(ID.feature('core', 'account'))
+  assert.ok(link, 'Account surfaces the endpoint whose handler uses its AccountManager class')
+  assert.equal(link.rel, 'capability-reference', 'the cross-link is labelled as a code reference, not a fabricated one')
+  // a generated spec file that mentions the same class must NOT correlate (non-code source is skipped)
+  const specRead = () => JSON.stringify({ schemas: { AccountManager: {} } })
+  const g2 = openGraph()
+  const inv2 = { ...inv, rest_api: [{ file: 'openapi.json', line: 1, entry: "GET '/x'", detail: 'spec', method: 'GET' }] }
+  buildGraph(g2, { project: { id: 'project:spec', name: 'spec' }, snapshot: { id: 'snapshot:spec', file_count: 2 },
+    profile: { languages: ['PHP'] }, inventories: inv2, featurePlan: [plan[0], { ...plan[1], rows: [{ kind: 'rest_api', row: inv2.rest_api[0] }] }], readSource: specRead })
+  const noise = g2.prepare(`SELECT 1 FROM edges WHERE src=? AND type='EXPOSES'`).get(ID.feature('core', 'account'))
+  assert.ok(!noise, 'a generated spec (openapi.json) referencing the class does not create a false cross-link')
+})
+
 test('#2 an unsupported stack maps its source but reports generic semantics as a gap', async () => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unsup-'))
   fs.writeFileSync(path.join(d, 'main.go'), 'package main\nfunc main(){}\n')

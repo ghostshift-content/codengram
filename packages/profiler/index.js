@@ -4,23 +4,46 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const CODE_EXT = new Set([
-  // mainstream
-  '.rb', '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.go', '.java', '.php', '.cs', '.c', '.cc', '.cpp',
-  '.h', '.hpp', '.hh', '.cxx', '.rs', '.kt', '.kts', '.swift', '.scala', '.sc', '.ex', '.exs', '.erl', '.hrl',
-  '.clj', '.cljs', '.cljc', '.groovy', '.gvy', '.pl', '.pm', '.sh', '.bash', '.zsh', '.dart',
-  // CFML / ColdFusion, .NET, JVM extras
-  '.cfm', '.cfc', '.cfml', '.vb', '.fs', '.fsx', '.fsi', '.razor', '.cshtml', '.vbhtml', '.aspx', '.ascx', '.jsp',
-  '.jspx', '.tag', '.gsp',
-  // functional / other languages
-  '.hs', '.lhs', '.ml', '.mli', '.elm', '.re', '.res', '.rkt', '.scm', '.lisp', '.lsp', '.el', '.lua', '.r',
-  '.jl', '.nim', '.cr', '.zig', '.v', '.d', '.m', '.mm', '.pas', '.pp', '.f', '.f90', '.for', '.cob', '.cbl',
-  '.tcl', '.ps1', '.psm1', '.coffee', '.sol', '.move', '.cairo', '.gleam', '.vala', '.hx', '.ino',
-  // templates / markup / query / config
-  '.sql', '.graphql', '.gql', '.prisma', '.proto', '.thrift', '.vue', '.svelte', '.astro', '.html', '.htm',
-  '.erb', '.haml', '.slim', '.twig', '.blade', '.ejs', '.hbs', '.handlebars', '.mustache', '.liquid', '.njk',
-  '.pug', '.jade', '.yml', '.yaml', '.json', '.json5', '.jsonc', '.tf', '.tfvars', '.hcl', '.conf', '.cnf',
-  '.properties', '.ini', '.toml', '.cfg', '.env', '.xml', '.gradle', '.dockerfile', '.bicep'])
+// THE canonical extension → { language, kind } table — the single source of truth for "what language is this file
+// and is it feature-bearing code". Every package derives its predicate here; none keeps a private extension list.
+//   kind: code · template · query · markup (feature-bearing) | config · data (snapshotted + profiled, not features)
+const LANG_TABLE = [
+  ['Ruby', 'code', '.rb'], ['Python', 'code', '.py'], ['JavaScript/TypeScript', 'code', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx'],
+  ['CoffeeScript', 'code', '.coffee'], ['Go', 'code', '.go'], ['Java', 'code', '.java'], ['Kotlin', 'code', '.kt', '.kts'],
+  ['PHP', 'code', '.php'], ['C#', 'code', '.cs'], ['C', 'code', '.c', '.h'], ['C++', 'code', '.cc', '.cpp', '.cxx', '.hpp', '.hh'],
+  ['Rust', 'code', '.rs'], ['Swift', 'code', '.swift'], ['Scala', 'code', '.scala', '.sc'], ['Elixir', 'code', '.ex', '.exs'],
+  ['Erlang', 'code', '.erl', '.hrl'], ['Clojure', 'code', '.clj', '.cljs', '.cljc'], ['Groovy', 'code', '.groovy', '.gvy'],
+  ['Perl', 'code', '.pl', '.pm'], ['Shell', 'code', '.sh', '.bash', '.zsh'], ['Dart', 'code', '.dart'],
+  ['CFML', 'code', '.cfm', '.cfc', '.cfml'], ['Visual Basic', 'code', '.vb'], ['F#', 'code', '.fs', '.fsx', '.fsi'],
+  ['Haskell', 'code', '.hs', '.lhs'], ['OCaml', 'code', '.ml', '.mli'], ['Elm', 'code', '.elm'], ['ReasonML', 'code', '.re'],
+  ['ReScript', 'code', '.res'], ['Racket', 'code', '.rkt'], ['Scheme', 'code', '.scm'], ['Lisp', 'code', '.lisp', '.lsp', '.el'],
+  ['Lua', 'code', '.lua'], ['R', 'code', '.r'], ['Julia', 'code', '.jl'], ['Nim', 'code', '.nim'], ['Crystal', 'code', '.cr'],
+  ['Zig', 'code', '.zig'], ['V', 'code', '.v'], ['D', 'code', '.d'], ['Objective-C', 'code', '.m', '.mm'],
+  ['Pascal', 'code', '.pas', '.pp'], ['Fortran', 'code', '.f', '.f90', '.for'], ['COBOL', 'code', '.cob', '.cbl'],
+  ['Tcl', 'code', '.tcl'], ['PowerShell', 'code', '.ps1', '.psm1'], ['Solidity', 'code', '.sol'], ['Move', 'code', '.move'],
+  ['Cairo', 'code', '.cairo'], ['Gleam', 'code', '.gleam'], ['Vala', 'code', '.vala'], ['Haxe', 'code', '.hx'], ['Arduino', 'code', '.ino'],
+  ['Vue', 'template', '.vue'], ['Svelte', 'template', '.svelte'], ['Astro', 'template', '.astro'],
+  ['Razor', 'template', '.razor', '.cshtml', '.vbhtml'], ['ASP.NET', 'template', '.aspx', '.ascx'],
+  ['JSP', 'template', '.jsp', '.jspx', '.tag'], ['GSP', 'template', '.gsp'], ['ERB', 'template', '.erb'],
+  ['Haml', 'template', '.haml'], ['Slim', 'template', '.slim'], ['Twig', 'template', '.twig'], ['Blade', 'template', '.blade'],
+  ['EJS', 'template', '.ejs'], ['Handlebars', 'template', '.hbs', '.handlebars'], ['Mustache', 'template', '.mustache'],
+  ['Liquid', 'template', '.liquid'], ['Nunjucks', 'template', '.njk'], ['Pug', 'template', '.pug', '.jade'],
+  ['HTML', 'markup', '.html', '.htm'],
+  ['SQL', 'query', '.sql'], ['GraphQL', 'query', '.graphql', '.gql'], ['Prisma', 'query', '.prisma'],
+  ['Protobuf', 'query', '.proto'], ['Thrift', 'query', '.thrift'],
+  ['YAML', 'config', '.yml', '.yaml'], ['TOML', 'config', '.toml'], ['INI', 'config', '.ini', '.cfg', '.cnf', '.conf'],
+  ['Properties', 'config', '.properties'], ['Dotenv', 'config', '.env'], ['Terraform', 'config', '.tf', '.tfvars'],
+  ['HCL', 'config', '.hcl'], ['Gradle', 'config', '.gradle'], ['Dockerfile', 'config', '.dockerfile'],
+  ['Bicep', 'config', '.bicep'], ['JSON', 'data', '.json', '.json5', '.jsonc'], ['XML', 'data', '.xml']]
+export const EXT_LANG = new Map()
+for (const [lang, kind, ...exts] of LANG_TABLE) for (const e of exts) EXT_LANG.set(e, { lang, kind })
+const FEATURE_BEARING = new Set(['code', 'template', 'query', 'markup'])   // kinds that can carry a mapped feature
+export const CODE_EXT = new Set(EXT_LANG.keys())
+export const extInfo = (name) => EXT_LANG.get(path.extname(String(name || '').toLowerCase())) || null
+export const languageFor = (name) => extInfo(name)?.lang || null
+// feature-bearing predicate: developer-authored logic/interface (excludes pure config/data). Coverage + universal
+// extraction use THIS; ingestion/profiler snapshot the broader isSourceFile. Both derive from the one table above.
+export const isCodeFile = (name) => { const i = extInfo(name); return !!i && FEATURE_BEARING.has(i.kind) }
 export const CODE_FILES = new Set(['gemfile', 'gemfile.lock', 'dockerfile', 'makefile', 'rakefile', 'procfile',
   'requirements.txt', 'pom.xml', 'build.gradle', 'go.mod', 'go.sum', 'cargo.toml', 'cargo.lock', 'composer.json',
   'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'nginx.conf', 'docker-compose.yml', 'docker-compose.yaml'])
@@ -118,8 +141,9 @@ export function profileRepo(root, opts = {}) {
   // Structural inference: infer language/framework from LAYOUT when manifests are absent (e.g. a Rails app with no
   // Gemfile at root). Deterministic, additive — never overrides a manifest-detected stack.
   const byExt = new Set(languages_by_bytes.map((l) => l.ext))
-  const inferLang = (ext, name) => { if (byExt.has(ext) && !stack.languages.includes(name)) stack.languages.push(name) }
-  inferLang('.rb', 'Ruby'); inferLang('.py', 'Python'); inferLang('.go', 'Go'); inferLang('.php', 'PHP')
+  // Name EVERY recognized language present (canonical table), not just a hardcoded four — a Haskell/COBOL/F#/… repo
+  // reports its real language even with no manifest. Config/data-only extensions (YAML, JSON) are not "languages".
+  for (const ext of byExt) { const info = EXT_LANG.get(ext); if (info && FEATURE_BEARING.has(info.kind) && !stack.languages.includes(info.lang)) stack.languages.push(info.lang) }
   const railsLayout = entry_points.some((e) => /(^|\/)config\/routes\.rb$/.test(e)) || top_directories.some((d) => d.dir === 'app')
   if (byExt.has('.rb') && railsLayout && !stack.frameworks.includes('Rails')) stack.frameworks.push('Rails')
   const nextcloudLayout = files.some((f) => /(^|\/)core\/routes\.php$/i.test(f.path)) &&

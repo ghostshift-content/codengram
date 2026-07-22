@@ -6,6 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { INVENTORY_KEYS, Registry, definePlugin } from '../plugins/index.js'
+import { isCodeFile } from '../profiler/index.js'   // THE canonical feature-bearing predicate (one shared table)
 
 // ── extraction context over a frozen source tree ───────────────────────────────────────────────
 const SKIP_DIR = new Set(['node_modules', '.git', 'vendor', '3rdparty', 'dist', 'build', 'coverage', 'tmp', 'log', 'logs', 'target', 'cypress', '__tests__', '__mocks__'])
@@ -32,7 +33,7 @@ export function buildContext(sourceRoot) {
     const hits = []
     for (const f of files) {
       if (pathRe && !pathRe.test(f.path)) continue
-      if (nameRe && !nameRe.test(f.name)) continue
+      if (nameRe && !(typeof nameRe === 'function' ? nameRe(f.name) : nameRe.test(f.name))) continue   // regex OR predicate
       const lines = read(f.path).split(/\r?\n/)
       for (let i = 0; i < lines.length; i++) { const m = re.exec(lines[i]); re.lastIndex = 0; if (m) hits.push({ file: f.path, line: i + 1, text: lines[i].trim(), m }) }
     }
@@ -217,7 +218,6 @@ export function builtinRegistry() { return new Registry().register(railsPlugin) 
 // (controller, service, model, job, auth) is encoded in its path/name across almost every ecosystem — and (b) a few
 // broad cross-framework CONTENT patterns for route/auth definitions. Not as sharp as a hand-tuned plugin, but it means
 // PHP / Java / JS / TS / Python / Go / Rust / … all map instead of returning zero features.
-const CODE_EXT = /\.(js|jsx|ts|tsx|mjs|cjs|php|py|rb|go|java|kt|kts|rs|ex|exs|erl|cs|scala|sc|swift|vue|svelte|astro|c|cc|cpp|cxx|h|hpp|hh|clj|cljs|pl|pm|groovy|dart|cfm|cfc|cfml|vb|fs|fsx|razor|cshtml|aspx|jsp|jspx|gsp|hs|ml|mli|elm|re|res|rkt|scm|lua|r|jl|nim|cr|zig|v|d|m|mm|pas|f90|tcl|ps1|coffee|sol|move|cairo|gleam|vala|hx)$/i
 const ROUTE_DEF = /\b(?:(?:app|router|route|api|bp|blueprint|srv|mux|group|http|r|Router|Route)\s*\.\s*(?:get|post|put|patch|delete|options|head|use|all|route|handle|handlefunc|match|any|resource|apiresource|add_route|add_url_rule)\s*\()|@(?:Get|Post|Put|Patch|Delete|Request|Api|Web)Mapping\b|@(?:app|router|blueprint|bp)\.(?:get|post|put|patch|delete|route)\b|Route::(?:get|post|put|patch|delete|any|match|resource|apiResource|group)\s*\(|#\[(?:Route|ApiRoute|FrontpageRoute|Get|Post|Put|Delete|Patch)\b|@(?:Path|GET|POST|PUT|DELETE|PATCH)\b|\b(?:path|re_path|url)\s*\(\s*[rf]?['"]|http\.HandleFunc\s*\(/i
 const AUTH_DEF = /@(?:PreAuthorize|PostAuthorize|Secured|RolesAllowed|Authorize|Authenticated|PermitAll|DenyAll)\b|IsGranted|isGranted\s*\(|hasR(?:ole|oles|equest)|hasAnyRole|hasAuthority\s*\(|requireLogin|ensureLoggedIn|authenticate[_(]|current_user\b|getUser\(|@login_required|checkPermission|authorize[!(]|before_action[^,\n]*auth|passport\.|jwt\.verify|verifyToken|Auth::(?:check|user|guard)|#\[[A-Za-z]*(?:Admin|Auth|Role|Public|Require|Secur|Anonym|Grant|Permission|Guard|Login|Restrict|Permit|Deny)[A-Za-z]*\]/i
 const DOWNLOAD_DEF = /\b(?:(?:function|def|func)\s+\w*(?:upload|download|export|attachment)\w*|(?:public|private|protected|async|static)\s+(?:\w+\s+)?\w*(?:upload|download|export|attachment)\w*\s*\(|sendFile\s*\(|send_file\b|send_data\b|FileResponse\s*\(|Content-Disposition\b|move_uploaded_file\s*\(|presigned\w*\s*\()/i
@@ -254,9 +254,16 @@ const routeFields = (text) => {
   return { method, path: route }
 }
 
+// An OpenAPI/Swagger contract is recognized by its CONTENT (an `openapi`/`swagger` version + a `paths` map), not by a
+// blessed filename — so api-spec.json / api-spec.yaml map exactly like openapi.json. A filename match short-circuits.
+function looksLikeApiSpec(text) {
+  const head = text.slice(0, 8000)
+  return /["']?(?:openapi|swagger)["']?\s*:/.test(head) && /["']?paths["']?\s*:/.test(head)
+}
 function openApiInventory(ctx) {
   const rows = []
-  const specFiles = ctx.files.filter((f) => /(?:^|\/)(?:openapi|swagger)(?:[-_.][^/]*)?\.(?:json|ya?ml)$/i.test(f.path))
+  const specFiles = ctx.files.filter((f) => /\.(?:json|ya?ml|json5)$/i.test(f.name) &&
+    (/(?:^|\/)(?:openapi|swagger)(?:[-_.][^/]*)?\.(?:json|ya?ml)$/i.test(f.path) || looksLikeApiSpec(ctx.read(f.path))))
   for (const file of specFiles) {
     const text = ctx.read(file.path)
     if (/\.json$/i.test(file.path)) {
@@ -277,7 +284,7 @@ function openApiInventory(ctx) {
     }
     const lines = text.split(/\r?\n/); let currentPath = ''
     for (let i = 0; i < lines.length; i++) {
-      const pathHit = lines[i].match(/^\s{0,6}(\/[^:]+):\s*$/)
+      const pathHit = lines[i].match(/^\s{0,6}["']?(\/[^:"']+)["']?:\s*$/)   // path key, quoted or bare
       if (pathHit) { currentPath = pathHit[1]; continue }
       const verb = lines[i].match(/^\s+(get|post|put|patch|delete|options|head):\s*$/i)
       if (currentPath && verb) rows.push({ file: file.path, line: i + 1, entry: `${verb[1].toUpperCase()} '${currentPath}'`,
@@ -323,19 +330,19 @@ export function universalInventory(ctx) {
   out.rest_api.push(...openApiInventory(ctx))
   for (const row of phpArrayRoutes(ctx)) (row.detail === 'php-rest-route' ? out.rest_api : out.routes_endpoints).push(row)
   // (b) content: explicit route/auth/data-boundary definitions (scoped to code files for speed).
-  for (const h of ctx.grep(ROUTE_DEF, { nameRe: CODE_EXT })) {
+  for (const h of ctx.grep(ROUTE_DEF, { nameRe: isCodeFile })) {
     const parsed = routeFields(h.text), rest = /(?:^|\/)(?:api|rest|graphql)(?:\/|$)/i.test(h.file) || /^\/api(?:\/|$)/i.test(parsed.path) || /ApiRoute|RequestMapping/i.test(h.text)
     ;(rest ? out.rest_api : out.routes_endpoints).push({ ...item(h, parsed.path ? `${parsed.method} '${parsed.path}'` : h.text.slice(0, 90), rest ? 'generic-rest-route' : 'route'), ...parsed,
       api_class: rest ? 'Source API route' : '', purpose: rest ? 'REST API operation' : 'Web route' })
   }
-  for (const h of ctx.grep(AUTH_DEF, { nameRe: CODE_EXT })) out.tokens_actors.push(item(h, h.text.slice(0, 90), 'auth'))
-  for (const h of ctx.grep(DOWNLOAD_DEF, { nameRe: CODE_EXT })) out.downloads_uploads_exports.push(item(h, h.text.slice(0, 90), 'file-io'))
-  for (const h of ctx.grep(SEARCH_DEF, { nameRe: CODE_EXT })) out.search_aggregation.push(item(h, h.text.slice(0, 90), 'search'))
+  for (const h of ctx.grep(AUTH_DEF, { nameRe: isCodeFile })) out.tokens_actors.push(item(h, h.text.slice(0, 90), 'auth'))
+  for (const h of ctx.grep(DOWNLOAD_DEF, { nameRe: isCodeFile })) out.downloads_uploads_exports.push(item(h, h.text.slice(0, 90), 'file-io'))
+  for (const h of ctx.grep(SEARCH_DEF, { nameRe: isCodeFile })) out.search_aggregation.push(item(h, h.text.slice(0, 90), 'search'))
   for (const h of ctx.grep(GRAPHQL_DEF, { nameRe: /\.(?:graphql|gql|js|jsx|ts|tsx|py|rb|php|java|kt|go)$/i })) out.graphql.push(item(h, h.text.slice(0, 90), 'graphql-operation'))
   // (c) file-role heuristics (fast, language-agnostic) — one representative row per meaningful file.
   const represented = new Set(INVENTORY_KEYS.flatMap((k) => out[k].map((r) => r.file)))
   for (const f of ctx.files) {
-    if (!CODE_EXT.test(f.name) && !ROLE[8][1].test(f.path)) continue    // code file, or a process/infra file
+    if (!isCodeFile(f.name) && !ROLE[8][1].test(f.path)) continue    // code file, or a process/infra file
     for (const [kind, re, detail] of ROLE) {
       if (re.test(f.path) || re.test(f.name)) { out[kind].push({ file: f.path, line: 1, entry: f.name, detail }); represented.add(f.path); break }
     }
@@ -343,7 +350,7 @@ export function universalInventory(ctx) {
   // (d) total source coverage. Unknown naming conventions must not make a repository disappear. Represent each
   // otherwise-unclassified code file as a cited source-module symbol; downstream planning consolidates these rows by
   // coherent directory/module, and the completion gate keeps the resulting semantics explicitly low-confidence.
-  for (const f of ctx.files) if (CODE_EXT.test(f.name) && !represented.has(f.path)) {
+  for (const f of ctx.files) if (isCodeFile(f.name) && !represented.has(f.path)) {
     out.services_finders_policies.push({ file: f.path, line: 1, entry: f.name, detail: 'source-module' })
   }
   return out
@@ -369,14 +376,14 @@ export function extractInventories({ sourceRoot, profile, registry = builtinRegi
   for (const plugin of matched) absorb(plugin.inventory(ctx) || {}, plugin.id)
   const universal = universalInventory(ctx)
   const specializedFiles = new Set(INVENTORY_KEYS.flatMap((k) => merged[k].map((r) => r.file)))
-  const extByLang = { Ruby: /\.rb$/i, Python: /\.py$/i, Go: /\.go$/i, PHP: /\.php$/i,
-    'JavaScript/TypeScript': /\.(?:js|jsx|ts|tsx|mjs|cjs)$/i, Java: /\.(?:java|kt|kts)$/i }
-  const coveredExt = matched.map((p) => p.langs.map((l) => extByLang[l]).filter(Boolean)).flat()
-  const needsUniversal = (row) => matched.length === 0 || row.detail === 'openapi' ||
-    !specializedFiles.has(row.file) && !coveredExt.some((re) => re.test(row.file))
+  // A specialized plugin adds PRECISION for the files it represented — it does not claim every file in its language.
+  // Universal source-module anchors still cover any file the plugin left unrepresented (e.g. app/lib/opaque.rb).
+  const needsUniversal = (row) => row.detail === 'openapi' || !specializedFiles.has(row.file)
   for (const key of INVENTORY_KEYS) absorb({ [key]: (universal[key] || []).filter(needsUniversal) }, 'universal')
   for (const key of INVENTORY_KEYS) merged[key].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
-  const sourceFiles = ctx.files.filter((f) => CODE_EXT.test(f.name))
+  // Coverage reconciles against the frozen snapshot manifest (ctx.files) via the SAME canonical predicate the
+  // snapshot was built with — never a narrower private list, which is what let .lhs/.cbl/… vanish from the count.
+  const sourceFiles = ctx.files.filter((f) => isCodeFile(f.name))
   const represented = new Set(INVENTORY_KEYS.flatMap((k) => merged[k].map((r) => r.file)))
   Object.defineProperty(merged, INVENTORY_META, { enumerable: false, value: Object.freeze({
     extractor_version: INVENTORY_EXTRACTOR_VERSION, matched_plugins: matched.map((p) => p.id),

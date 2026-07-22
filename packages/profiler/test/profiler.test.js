@@ -44,3 +44,25 @@ test('profileRepo returns deterministic facts + a real file manifest', () => {
   assert.ok(m.every(f => typeof f.path === 'string' && Number.isFinite(f.bytes)))
   fs.rmSync(d, { recursive: true, force: true })
 })
+
+test('the canonical extension table names every language and gates feature-bearing code (one shared predicate)', () => {
+  // #5 language-for: recognized extensions resolve to their language, config/data do not gate as code.
+  assert.equal(P.languageFor('Bank.lhs'), 'Haskell')
+  assert.equal(P.languageFor('PAYROLL.cbl'), 'COBOL')
+  assert.equal(P.languageFor('Api.fsi'), 'F#')
+  assert.equal(P.languageFor('home.pug'), 'Pug')
+  // #1 feature-bearing predicate: code/template count; pure config/data are snapshotted but not features.
+  assert.ok(P.isCodeFile('a.lhs') && P.isCodeFile('a.cbl') && P.isCodeFile('a.fsi') && P.isCodeFile('a.pug'))
+  assert.ok(!P.isCodeFile('config.yaml') && !P.isCodeFile('data.json') && !P.isCodeFile('logo.png'))
+  // isSourceFile (snapshot) stays broader than isCodeFile (features): config is source, not a feature.
+  assert.ok(P.isSourceFile('config.yaml') && !P.isCodeFile('config.yaml'))
+})
+
+test('structural language inference names all present languages, not a hardcoded four', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-langs-'))
+  fs.writeFileSync(path.join(d, 'Ledger.cbl'), 'PROGRAM-ID. LEDGER.\n')
+  fs.writeFileSync(path.join(d, 'Core.hs'), 'module Core where\n')
+  const langs = P.profileRepo(d).languages
+  assert.ok(langs.includes('COBOL') && langs.includes('Haskell'), `expected COBOL+Haskell, got ${langs.join(',')}`)
+  fs.rmSync(d, { recursive: true, force: true })
+})

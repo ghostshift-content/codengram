@@ -39,7 +39,19 @@ export function buildContext(sourceRoot) {
     }
     return hits
   }
-  return { root: sourceRoot, files, read, grep }
+  // Client-delivered / vendored assets are not the app's server source — scraping route/auth keywords out of jQuery,
+  // a Vue bundle, or a filebrowser widget yields pure noise ("GET" / "$http.get" inside browser JS). Exclude JS/CSS
+  // that is (a) minified by name, (b) minified by shape, or (c) sitting in a static-asset dir — a server route is
+  // essentially never under assets/static/public/vendor. Excluded from extraction, anchoring AND coverage.
+  const ASSET_DIR = /(?:^|\/)(?:assets?|static|public|vendor|dist|build|bower_components|third[-_]?party)\//i
+  const bundled = new Set()
+  for (const f of files) {
+    if (!/\.(?:js|mjs|cjs|jsx|ts|tsx|css)$/i.test(f.name)) continue
+    if (/[.-]min\.(?:js|mjs|cjs|css)$/i.test(f.name) || ASSET_DIR.test(f.path)) { bundled.add(f.path); continue }
+    const t = read(f.path); const nl = (t.match(/\n/g) || []).length + 1
+    if (t.length > 30000 && t.length / nl > 250) bundled.add(f.path)   // avg line ≫ source → minified/bundled
+  }
+  return { root: sourceRoot, files, read, grep, bundled }
 }
 
 const item = (h, entry, detail = '') => ({ file: h.file, line: h.line, entry, detail })
@@ -329,19 +341,21 @@ export function universalInventory(ctx) {
   // (a) machine-readable API contracts and framework route declarations.
   out.rest_api.push(...openApiInventory(ctx))
   for (const row of phpArrayRoutes(ctx)) (row.detail === 'php-rest-route' ? out.rest_api : out.routes_endpoints).push(row)
-  // (b) content: explicit route/auth/data-boundary definitions (scoped to code files for speed).
-  for (const h of ctx.grep(ROUTE_DEF, { nameRe: isCodeFile })) {
+  // (b) content: explicit route/auth/data-boundary definitions (scoped to code files, skipping minified bundles).
+  const notBundled = (h) => !ctx.bundled.has(h.file)
+  for (const h of ctx.grep(ROUTE_DEF, { nameRe: isCodeFile }).filter(notBundled)) {
     const parsed = routeFields(h.text), rest = /(?:^|\/)(?:api|rest|graphql)(?:\/|$)/i.test(h.file) || /^\/api(?:\/|$)/i.test(parsed.path) || /ApiRoute|RequestMapping/i.test(h.text)
     ;(rest ? out.rest_api : out.routes_endpoints).push({ ...item(h, parsed.path ? `${parsed.method} '${parsed.path}'` : h.text.slice(0, 90), rest ? 'generic-rest-route' : 'route'), ...parsed,
       api_class: rest ? 'Source API route' : '', purpose: rest ? 'REST API operation' : 'Web route' })
   }
-  for (const h of ctx.grep(AUTH_DEF, { nameRe: isCodeFile })) out.tokens_actors.push(item(h, h.text.slice(0, 90), 'auth'))
-  for (const h of ctx.grep(DOWNLOAD_DEF, { nameRe: isCodeFile })) out.downloads_uploads_exports.push(item(h, h.text.slice(0, 90), 'file-io'))
-  for (const h of ctx.grep(SEARCH_DEF, { nameRe: isCodeFile })) out.search_aggregation.push(item(h, h.text.slice(0, 90), 'search'))
-  for (const h of ctx.grep(GRAPHQL_DEF, { nameRe: /\.(?:graphql|gql|js|jsx|ts|tsx|py|rb|php|java|kt|go)$/i })) out.graphql.push(item(h, h.text.slice(0, 90), 'graphql-operation'))
+  for (const h of ctx.grep(AUTH_DEF, { nameRe: isCodeFile }).filter(notBundled)) out.tokens_actors.push(item(h, h.text.slice(0, 90), 'auth'))
+  for (const h of ctx.grep(DOWNLOAD_DEF, { nameRe: isCodeFile }).filter(notBundled)) out.downloads_uploads_exports.push(item(h, h.text.slice(0, 90), 'file-io'))
+  for (const h of ctx.grep(SEARCH_DEF, { nameRe: isCodeFile }).filter(notBundled)) out.search_aggregation.push(item(h, h.text.slice(0, 90), 'search'))
+  for (const h of ctx.grep(GRAPHQL_DEF, { nameRe: /\.(?:graphql|gql|js|jsx|ts|tsx|py|rb|php|java|kt|go)$/i }).filter(notBundled)) out.graphql.push(item(h, h.text.slice(0, 90), 'graphql-operation'))
   // (c) file-role heuristics (fast, language-agnostic) — one representative row per meaningful file.
   const represented = new Set(INVENTORY_KEYS.flatMap((k) => out[k].map((r) => r.file)))
   for (const f of ctx.files) {
+    if (ctx.bundled.has(f.path)) continue                            // third-party bundle, not the app's source
     if (!isCodeFile(f.name) && !ROLE[8][1].test(f.path)) continue    // code file, or a process/infra file
     for (const [kind, re, detail] of ROLE) {
       if (re.test(f.path) || re.test(f.name)) { out[kind].push({ file: f.path, line: 1, entry: f.name, detail }); represented.add(f.path); break }
@@ -350,7 +364,7 @@ export function universalInventory(ctx) {
   // (d) total source coverage. Unknown naming conventions must not make a repository disappear. Represent each
   // otherwise-unclassified code file as a cited source-module symbol; downstream planning consolidates these rows by
   // coherent directory/module, and the completion gate keeps the resulting semantics explicitly low-confidence.
-  for (const f of ctx.files) if (isCodeFile(f.name) && !represented.has(f.path)) {
+  for (const f of ctx.files) if (isCodeFile(f.name) && !ctx.bundled.has(f.path) && !represented.has(f.path)) {
     out.services_finders_policies.push({ file: f.path, line: 1, entry: f.name, detail: 'source-module' })
   }
   return out
@@ -383,7 +397,7 @@ export function extractInventories({ sourceRoot, profile, registry = builtinRegi
   for (const key of INVENTORY_KEYS) merged[key].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
   // Coverage reconciles against the frozen snapshot manifest (ctx.files) via the SAME canonical predicate the
   // snapshot was built with — never a narrower private list, which is what let .lhs/.cbl/… vanish from the count.
-  const sourceFiles = ctx.files.filter((f) => isCodeFile(f.name))
+  const sourceFiles = ctx.files.filter((f) => isCodeFile(f.name) && !ctx.bundled.has(f.path))
   const represented = new Set(INVENTORY_KEYS.flatMap((k) => merged[k].map((r) => r.file)))
   Object.defineProperty(merged, INVENTORY_META, { enumerable: false, value: Object.freeze({
     extractor_version: INVENTORY_EXTRACTOR_VERSION, matched_plugins: matched.map((p) => p.id),

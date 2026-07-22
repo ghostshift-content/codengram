@@ -202,3 +202,15 @@ test('OpenAPI contracts are recognized by content — non-blessed filenames + qu
   assert.ok(ops.includes("GET '/accounts'") && ops.includes("POST '/accounts'"), 'quoted-path YAML spec maps its operations')
   fs.rmSync(d, { recursive: true, force: true })
 })
+
+test('minified/vendored client assets are not scraped as server routes or counted as source', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-bundle-'))
+  write(d, 'app/controllers/orders_controller.rb', "class OrdersController < ApplicationController\n  def index; end\nend\n")
+  write(d, 'public/assets/vendor.min.js', 'var x=1;'.repeat(200))                      // minified by name
+  write(d, 'public/js/jquery.jstree.js', "$.get('/x');\n".repeat(50) + '$http.get(url)\n')  // unminified lib in an asset dir
+  const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d) })
+  const all = INVENTORY_KEYS.flatMap((k) => inv[k])
+  assert.ok(!all.some((r) => /vendor\.min\.js|jquery\.jstree\.js/.test(r.file)), 'no rows sourced from client bundles/assets')
+  assert.ok(all.some((r) => r.file.endsWith('orders_controller.rb')), 'real server source still mapped')
+  fs.rmSync(d, { recursive: true, force: true })
+})

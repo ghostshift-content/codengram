@@ -90,6 +90,28 @@ test('#1 a malformed id can never collapse a path and wipe other projects', () =
   fs.rmSync(base, { recursive: true, force: true })
 })
 
+test('checkSourceAccess catches missing / non-dir / unreadable paths with a fix hint', () => {
+  const { base, repo } = scaffold()
+  assert.equal(I.checkSourceAccess(repo).ok, true)
+  assert.equal(I.checkSourceAccess('').ok, false)
+  assert.match(I.checkSourceAccess(path.join(base, 'nope')).error, /not found/i)
+  const file = path.join(repo, 'Gemfile')
+  const asFile = I.checkSourceAccess(file); assert.equal(asFile.ok, false); assert.match(asFile.error, /not a folder/i)
+  // unreadable dir (skip where chmod is a no-op, e.g. as root)
+  const locked = path.join(base, 'locked'); fs.mkdirSync(locked); fs.writeFileSync(path.join(locked, 'x'), 'x')
+  try { fs.chmodSync(locked, 0o000) } catch {}
+  const r = I.checkSourceAccess(locked)
+  if (process.getuid && process.getuid() !== 0) { assert.equal(r.ok, false); assert.ok(r.fix, 'gives an actionable fix') }
+  try { fs.chmodSync(locked, 0o755) } catch {}
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
+test('createProject refuses an unreadable source (defense in depth)', () => {
+  const { base, dataRoot } = scaffold()
+  assert.throws(() => I.createProject(dataRoot, path.join(base, 'ghost')), /not found/i)
+  fs.rmSync(base, { recursive: true, force: true })
+})
+
 test('deletion removes only generated data, never the source repo', () => {
   const { base, repo, dataRoot } = scaffold()
   const p = I.createProject(dataRoot, repo)

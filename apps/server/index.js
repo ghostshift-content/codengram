@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import { fork, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { listProjects, getProject, listSnapshots, createProject } from '../../packages/ingestion/index.js'
+import { listProjects, getProject, listSnapshots, createProject, checkSourceAccess } from '../../packages/ingestion/index.js'
 import { latestPublished, newMissionId } from '../../packages/recon/index.js'
 import { openGraph, nodesByType, neighbourhood, counts, claimsForNode } from '../../packages/graph/index.js'
 import { getContextBundle, answer, AI_PREAMBLE } from '../../packages/retrieval/index.js'
@@ -86,11 +86,17 @@ export async function startServer({ dataRoot, port = 4173 } = {}) {
       // Diagnostics for the UI. No port check (the server is obviously already listening on it). ?probe=1 also
       // verifies the Claude login (a real round-trip; costs a little quota).
       if (p === '/api/doctor') return json(res, 200, await runDoctor({ dataRoot, probeAi: url.searchParams.get('probe') === '1' }))
+      // Verify Codengram can actually READ the source path before creating a project / starting recon (macOS TCC etc).
+      if (p === '/api/access-check' && req.method === 'POST') {
+        const { sourceRoot } = await readBody(req)
+        return json(res, 200, checkSourceAccess(sourceRoot))
+      }
       if (p === '/api/projects' && req.method === 'GET') return json(res, 200, { projects: listProjects(dataRoot).map((x) => projectSummary(dataRoot, x)) })
       if (p === '/api/projects' && req.method === 'POST') {
         const { sourceRoot, name } = await readBody(req)
-        if (!sourceRoot || !fs.existsSync(path.resolve(sourceRoot))) return json(res, 400, { error: 'sourceRoot does not exist' })
-        const project = createProject(dataRoot, path.resolve(sourceRoot), { name })
+        const access = checkSourceAccess(sourceRoot)
+        if (!access.ok) return json(res, 400, { error: access.error, fix: access.fix })   // clear, actionable — blocks recon
+        const project = createProject(dataRoot, access.path, { name })
         return json(res, 200, { project: projectSummary(dataRoot, project) })
       }
 

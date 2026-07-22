@@ -3,7 +3,7 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { parseArgs } from 'node:util'
-import { createProject, listProjects, listSnapshots, getProject, snapshotDir } from '../../../packages/ingestion/index.js'
+import { createProject, listProjects, listSnapshots, getProject, snapshotDir, checkSourceAccess } from '../../../packages/ingestion/index.js'
 import { scanSnapshot, latestPublished } from '../../../packages/recon/index.js'
 import { renderPhase1Maps } from '../../../packages/markdown-renderer/index.js'
 import { openGraph } from '../../../packages/graph/index.js'
@@ -33,11 +33,11 @@ async function preflight({ port = null } = {}) {
 
 async function scan(repo) {
   if (!repo) die('usage: codengram scan <repo-path> [--data DIR]')
-  const abs = path.resolve(repo)
-  if (!fs.existsSync(abs)) die(`no such path: ${abs}`)
+  const access = checkSourceAccess(repo)
+  if (!access.ok) die(`${access.error}${access.fix ? `\n  → ${access.fix}` : ''}`)
   await preflight()
-  console.log(dim(`freezing + reconning ${abs} …`))
-  const project = createProject(dataRoot, abs, { name: values.name })
+  console.log(dim(`freezing + reconning ${access.path} …`))
+  const project = createProject(dataRoot, access.path, { name: values.name })
   // The renderer is injected so the graph + markdown are validated together, then the snapshot is atomically sealed.
   const res = await scanSnapshot(dataRoot, project.id, { onPhase: (e) => process.stdout.write(dim(`  · ${e.label}\n`)), render: (db, out, meta) => renderPhase1Maps(db, out, meta) })
   const brain = path.join(snapshotDir(dataRoot, project.id, res.snapshotId), 'publications', res.pubId, 'phase1-maps')

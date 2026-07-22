@@ -189,15 +189,30 @@
   function newView(){ return `<div class="obmain"><div class="wrap" style="max-width:600px">
     <button class="btn btn-ghost" onclick="goHome()" style="margin-bottom:18px;color:var(--color-accent)">← Projects</button>
     <div class="card"><h2 style="font-size:26px;margin-bottom:4px">Add a repository</h2>
-      <p class="muted" style="font-size:13px;margin-bottom:20px">Point Codengram at a local repository and it builds its second brain. Source is read-only — your code is never modified.</p>
-      <div class="field" style="margin-bottom:8px"><label>Repository path</label><input class="input big mono" id="repopath" placeholder="/absolute/path/to/your/repo"></div>
-      <div id="newerr" class="cite" style="color:var(--gap);min-height:16px;margin-bottom:12px"></div>
-      <button class="btn btn-primary btn-lg btn-block" onclick="submitNew()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m5 3 14 9-14 9z"/></svg>Recon</button>
+      <p class="muted" style="font-size:13px;margin-bottom:20px">Point Codengram at a local repository. Source is read-only — your code is never modified.</p>
+      <div class="field" style="margin-bottom:8px"><label>Repository path</label><input class="input big mono" id="repopath" placeholder="/absolute/path/to/your/repo" oninput="onPathInput()" onkeydown="if(event.key==='Enter')submitNew()"></div>
+      <div id="newerr" class="cite" style="min-height:16px;margin-bottom:12px"></div>
+      <button class="btn btn-primary btn-lg btn-block" id="reconbtn" onclick="submitNew()" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m5 3 14 9-14 9z"/></svg>Recon</button>
       <p class="muted" style="font-size:11.5px;text-align:center;margin-top:12px">Snapshots the source, profiles it, and maps the whole codebase. Recon only — never assesses security.</p>
     </div></div></div>`; }
-  window.submitNew=async()=>{ const sourceRoot=$('repopath').value.trim(); if(!sourceRoot)return; $('newerr').textContent='creating…';
+  let _accessOk=false, _accessTimer=null, _lastChecked='';
+  window.onPathInput=()=>{ _accessOk=false; const btn=$('reconbtn'); if(btn)btn.disabled=true;
+    clearTimeout(_accessTimer); const v=$('repopath').value.trim();
+    const err=$('newerr'); if(!v){ if(err)err.textContent=''; return; }
+    if(err){ err.style.color='var(--color-text)'; err.textContent='checking access…'; }
+    _accessTimer=setTimeout(()=>checkAccess(v), 450); };
+  async function checkAccess(v){ _lastChecked=v;
+    let r; try{ r=await api('/access-check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sourceRoot:v})}); }catch{ r={ok:false,error:'server unreachable'}; }
+    if($('repopath').value.trim()!==v) return;   // input changed while checking
+    const err=$('newerr'), btn=$('reconbtn'); _accessOk=!!r.ok;
+    if(r.ok){ if(err){ err.style.color='var(--ok)'; err.innerHTML='✓ readable — ready to recon'; } if(btn)btn.disabled=false; }
+    else { if(err){ err.style.color='var(--gap)'; err.innerHTML='⚠ '+esc(r.error||'no access')+(r.fix?'<br><span class="muted" style="color:color-mix(in srgb,var(--color-text) 60%,transparent)">→ '+esc(r.fix)+'</span>':''); } if(btn)btn.disabled=true; } }
+  window.submitNew=async()=>{ const sourceRoot=$('repopath').value.trim(); if(!sourceRoot)return;
+    if(!_accessOk){ await checkAccess(sourceRoot); if(!_accessOk)return; }   // never proceed without confirmed read access
+    const btn=$('reconbtn'); if(btn){btn.disabled=true;} $('newerr').style.color='var(--color-text)'; $('newerr').textContent='creating…';
     const r=await api('/projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sourceRoot})});
-    if(r.error){$('newerr').textContent=r.error;return;} cur=r.project; await loadProjects(); startRecon(); };
+    if(r.error){ const err=$('newerr'); err.style.color='var(--gap)'; err.innerHTML='⚠ '+esc(r.error)+(r.fix?'<br><span class="muted">→ '+esc(r.fix)+'</span>':''); if(btn)btn.disabled=false; return; }
+    cur=r.project; await loadProjects(); startRecon(); };
 
   // ── RECON (live progress) ───────────────────────────────────────────────
   const PHASES=[['freeze','Freeze snapshot'],['profile','Profile scale & shape'],['inventories','Extract inventories'],['planning','Lead + teammate planning'],['graph','Build canonical graph'],['render','Generate + validate maps'],['seal','Seal + publish'],['ready','Brain ready']];

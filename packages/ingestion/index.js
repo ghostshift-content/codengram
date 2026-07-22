@@ -48,9 +48,32 @@ function writeJson(file, obj) {
 }
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null } }
 
+// ── source access (checked BEFORE creating a project or starting recon) ─────────────────────────
+// Half of real-world failures are permissions: the folder exists but the process can't READ it — most often macOS
+// privacy (TCC) blocking Desktop/Documents/Downloads until the terminal is granted access. Verify readable BEFORE
+// recon so the user gets a clear message instead of a scan that dies half-way.
+function accessFix(abs) {
+  if (process.platform === 'darwin')
+    return 'On macOS, grant read access: System Settings → Privacy & Security → Full Disk Access → enable your terminal (or the app running Codengram), then fully quit & reopen it. macOS blocks Desktop / Documents / Downloads by default.'
+  return 'Check folder permissions — the user running Codengram must be able to read this directory.'
+}
+export function checkSourceAccess(sourceRoot) {
+  const raw = String(sourceRoot || '').trim()
+  if (!raw) return { ok: false, error: 'No path provided.' }
+  const abs = path.resolve(raw)
+  if (!fs.existsSync(abs)) return { ok: false, error: `Path not found: ${abs}`, fix: 'Enter the correct absolute path to the repository.' }
+  let st; try { st = fs.statSync(abs) } catch (e) { return { ok: false, error: `Can't access ${abs} (${e.code || e.message}).`, fix: accessFix(abs) } }
+  if (!st.isDirectory()) return { ok: false, error: `Not a folder: ${abs}`, fix: 'Point Codengram at a repository folder, not a single file.' }
+  try { fs.readdirSync(abs) }                               // the real read test — throws EACCES/EPERM if blocked
+  catch (e) { return { ok: false, error: `Codengram can't read this folder (${e.code || e.message}).`, fix: accessFix(abs) } }
+  return { ok: true, path: abs }
+}
+
 // ── projects ─────────────────────────────────────────────────────────────────────────────────
 export function createProject(dataRoot, sourceRoot, { name, now = nowIso() } = {}) {
   const abs = path.resolve(sourceRoot)
+  const access = checkSourceAccess(abs)
+  if (!access.ok) throw new Error(access.error)             // defense in depth — never register an unreadable source
   if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) throw new Error(`source root is not a directory: ${abs}`)
   const id = ID.project(abs)                    // stable key = absolute path, independent of display name
   const dir = assertUnderData(dataRoot, projectDir(dataRoot, id))

@@ -10,7 +10,7 @@ import { listProjects, getProject, listSnapshots, createProject, checkSourceAcce
 import { latestPublished, newMissionId } from '../../packages/recon/index.js'
 import { openGraph, nodesByType, neighbourhood, counts, claimsForNode } from '../../packages/graph/index.js'
 import { getContextBundle, answer, AI_PREAMBLE } from '../../packages/retrieval/index.js'
-import { isAvailable, askClaude, isReconQuestion } from '../../packages/claude-runtime/index.js'
+import { isAvailable, askClaude, isReconQuestion, probeLogin } from '../../packages/claude-runtime/index.js'
 import { runDoctor, printDoctor } from '../../packages/doctor/index.js'
 import { renderFeatureMarkdown } from '../../packages/markdown-renderer/index.js'
 import { hostOk, originOk } from '../../packages/http-guards/index.js'
@@ -56,6 +56,17 @@ function emit(pid, ev) {
 }
 const clock = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}` }
 
+// Cached Claude connection status: SDK installed AND a working login (real probe). Cached 5 min (force=true re-probes).
+let _claudeStatus = { at: 0, result: null }
+async function claudeStatus(force = false) {
+  if (!force && _claudeStatus.result && Date.now() - _claudeStatus.at < 5 * 60 * 1000) return _claudeStatus.result
+  let result
+  if (!(await isAvailable())) result = { connected: false, reason: 'sdk', detail: 'Claude Agent SDK is not installed', fix: 'Run `npm install`, then `claude` + `/login`' }
+  else { const l = await probeLogin(); result = l.ok ? { connected: true } : { connected: false, reason: l.reason || 'auth', detail: l.detail || 'not logged in to Claude', fix: 'Run `claude`, then `/login`, and try again' } }
+  _claudeStatus = { at: Date.now(), result }
+  return result
+}
+
 // Progress is pipeline completion, not an elapsed-time guess. Early deterministic phases move the bar before the
 // feature count exists; once graph construction starts, mapped/planned features drive the 50–80% interval.
 const PHASE_PROGRESS = { start: 1, freeze: 5, profile: 15, inventories: 25, planning: 40, graph: 50, render: 85, seal: 95, done: 99, ready: 100 }
@@ -86,6 +97,8 @@ export async function startServer({ dataRoot, port = 4173 } = {}) {
       // Diagnostics for the UI. No port check (the server is obviously already listening on it). ?probe=1 also
       // verifies the Claude login (a real round-trip; costs a little quota).
       if (p === '/api/doctor') return json(res, 200, await runDoctor({ dataRoot, probeAi: url.searchParams.get('probe') === '1' }))
+      // Real "is Claude connected?" (SDK installed AND logged in) — cached 5 min so the UI can gate on it cheaply.
+      if (p === '/api/claude-status') return json(res, 200, await claudeStatus(url.searchParams.get('force') === '1'))
       // Verify Codengram can actually READ the source path before creating a project / starting recon (macOS TCC etc).
       if (p === '/api/access-check' && req.method === 'POST') {
         const { sourceRoot } = await readBody(req)

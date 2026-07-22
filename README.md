@@ -40,7 +40,12 @@ npm run scan -- /path/to/your/repo     # map a repo → writes a portable bundle
 node apps/cli/bin/codengram.js ls      # list mapped projects
 ```
 
-**AI is optional.** Everything runs **deterministically** with no AI. To enable Claude-backed answers, install [Claude Code](https://claude.ai/code) and run `claude` once to log in — Codengram uses your existing subscription and **never handles credentials**. Without it, `Ask` and the mapping still work, just with structure-derived text instead of model reasoning. Check your login any time with:
+**Claude** gives you AI-quality feature mapping. Install [Claude Code](https://claude.ai/code) and run `claude` once to log in — Codengram uses your existing subscription and **never handles credentials**.
+
+- **In the UI**, Recon **requires Claude connected** (the button stays disabled, with a fix hint, until it is) so every map is AI-quality.
+- **The core engine still runs fully offline** — the CLI (`npm run scan`) maps deterministically with no AI, and `Ask` answers either way (Claude-backed when connected, structure-derived otherwise).
+
+Check your login any time with:
 
 ```bash
 npm run doctor -- --probe              # also verifies your Claude subscription session

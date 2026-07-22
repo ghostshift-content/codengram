@@ -88,21 +88,11 @@ Use it for:
 
 ## A look inside
 
-**Features** — every capability mapped from source, each traced to `file:line`
-
-<p align="center"><img src="./docs/images/codengram-features.png" alt="Features mapped from source" width="880"></p>
-
-**The map** — features, domains, and how they connect
-
-<p align="center"><img src="./docs/images/codengram-brain.png" alt="The code map — features and their connections" width="880"></p>
-
-**Interfaces** — REST routes, GraphQL operations, and background jobs
-
-<p align="center"><img src="./docs/images/codengram-interfaces.png" alt="Interfaces — routes, GraphQL, jobs" width="880"></p>
-
-**Coverage** — per-item reconciliation and the completion gate
-
-<p align="center"><img src="./docs/images/codengram-coverage.png" alt="Coverage — per-item reconciliation" width="880"></p>
+| Features — capabilities mapped from source, cited to `file:line` | The map — features, domains, and how they connect |
+|:---:|:---:|
+| ![Features](./docs/images/codengram-features.png) | ![The map](./docs/images/codengram-brain.png) |
+| **Interfaces — REST routes, GraphQL, background jobs** | **Coverage — per-item reconciliation + completion gate** |
+| ![Interfaces](./docs/images/codengram-interfaces.png) | ![Coverage](./docs/images/codengram-coverage.png) |
 
 ---
 

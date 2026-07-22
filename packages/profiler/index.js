@@ -4,10 +4,23 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const CODE_EXT = new Set(['.rb', '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.go', '.java', '.php',
-  '.cs', '.c', '.cc', '.cpp', '.h', '.hpp', '.rs', '.kt', '.swift', '.scala', '.ex', '.exs', '.erl', '.clj',
-  '.groovy', '.pl', '.pm', '.sh', '.bash', '.sql', '.graphql', '.gql', '.vue', '.svelte', '.html', '.erb', '.haml',
-  '.yml', '.yaml', '.json', '.tf', '.conf', '.cnf', '.properties', '.ini', '.toml', '.cfg', '.env', '.xml', '.gradle'])
+export const CODE_EXT = new Set([
+  // mainstream
+  '.rb', '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.go', '.java', '.php', '.cs', '.c', '.cc', '.cpp',
+  '.h', '.hpp', '.hh', '.cxx', '.rs', '.kt', '.kts', '.swift', '.scala', '.sc', '.ex', '.exs', '.erl', '.hrl',
+  '.clj', '.cljs', '.cljc', '.groovy', '.gvy', '.pl', '.pm', '.sh', '.bash', '.zsh', '.dart',
+  // CFML / ColdFusion, .NET, JVM extras
+  '.cfm', '.cfc', '.cfml', '.vb', '.fs', '.fsx', '.fsi', '.razor', '.cshtml', '.vbhtml', '.aspx', '.ascx', '.jsp',
+  '.jspx', '.tag', '.gsp',
+  // functional / other languages
+  '.hs', '.lhs', '.ml', '.mli', '.elm', '.re', '.res', '.rkt', '.scm', '.lisp', '.lsp', '.el', '.lua', '.r',
+  '.jl', '.nim', '.cr', '.zig', '.v', '.d', '.m', '.mm', '.pas', '.pp', '.f', '.f90', '.for', '.cob', '.cbl',
+  '.tcl', '.ps1', '.psm1', '.coffee', '.sol', '.move', '.cairo', '.gleam', '.vala', '.hx', '.ino',
+  // templates / markup / query / config
+  '.sql', '.graphql', '.gql', '.prisma', '.proto', '.thrift', '.vue', '.svelte', '.astro', '.html', '.htm',
+  '.erb', '.haml', '.slim', '.twig', '.blade', '.ejs', '.hbs', '.handlebars', '.mustache', '.liquid', '.njk',
+  '.pug', '.jade', '.yml', '.yaml', '.json', '.json5', '.jsonc', '.tf', '.tfvars', '.hcl', '.conf', '.cnf',
+  '.properties', '.ini', '.toml', '.cfg', '.env', '.xml', '.gradle', '.dockerfile', '.bicep'])
 export const CODE_FILES = new Set(['gemfile', 'gemfile.lock', 'dockerfile', 'makefile', 'rakefile', 'procfile',
   'requirements.txt', 'pom.xml', 'build.gradle', 'go.mod', 'go.sum', 'cargo.toml', 'cargo.lock', 'composer.json',
   'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'nginx.conf', 'docker-compose.yml', 'docker-compose.yaml'])
@@ -73,6 +86,8 @@ const MANIFESTS = [
   { file: 'composer.json', lang: 'PHP', fw: [[/"name"\s*:\s*"nextcloud\/server"|nextcloud\/ocp|nextcloud\/server/i, 'Nextcloud'], [/laravel/i, 'Laravel'], [/symfony/i, 'Symfony']] },
   { file: 'Cargo.toml', lang: 'Rust', fw: [[/axum/i, 'Axum'], [/actix/i, 'Actix'], [/rocket/i, 'Rocket']] },
   { file: 'mix.exs', lang: 'Elixir', fw: [[/phoenix/i, 'Phoenix']] },
+  { file: 'box.json', lang: 'CFML', fw: [[/coldbox/i, 'ColdBox'], [/mura|masa/i, 'Masa/Mura CMS'], [/wheels/i, 'CFWheels']] },
+  { file: 'server.json', lang: 'CFML', fw: [[/lucee/i, 'Lucee'], [/adobe/i, 'Adobe CF']] },
 ]
 function detectStack(root) {
   const langs = new Set(), frameworks = new Set(), manifests = []

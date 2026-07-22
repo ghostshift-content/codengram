@@ -1,0 +1,303 @@
+<!-- Codengram — entry flow: Projects → New project → Live recon → Open brain. Organic design system.
+     Recon only: builds a structural second brain; never reports vulnerabilities. -->
+<title>Codengram — Start</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --color-bg:#f5ead8; --color-surface:#ebddc5; --color-text:#201e1d; --color-accent:#c67139; --color-accent-2:#7a8a5e;
+    --color-divider:color-mix(in srgb,#201e1d 16%,transparent);
+    --color-neutral-100:#f9f4ed; --color-neutral-200:#eee7db; --color-neutral-300:#dcd3c4; --color-neutral-400:#c0b6a5;
+    --color-neutral-500:#a19786; --color-neutral-600:#82796a; --color-neutral-700:#645c50; --color-neutral-800:#474238; --color-neutral-900:#2e2b25;
+    --color-accent-100:#fff2eb; --color-accent-200:#ffe1d0; --color-accent-300:#ffc6a5; --color-accent-400:#f6a06b; --color-accent-500:#d67f48;
+    --color-accent-600:#b2622d; --color-accent-700:#8c491a; --color-accent-800:#643312; --color-accent-900:#402310;
+    --color-accent-2-100:#f0fae1; --color-accent-2-200:#e1eecc; --color-accent-2-300:#ccdbb2; --color-accent-2-400:#aebf92; --color-accent-2-500:#8fa073;
+    --color-accent-2-600:#728157; --color-accent-2-700:#56633f; --color-accent-2-800:#3d472b; --color-accent-2-900:#272e1b;
+    --font-heading:"Caprasimo",Georgia,serif; --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif; --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --space-1:4.4px; --space-2:8.8px; --space-3:13.2px; --space-4:17.6px; --space-6:26.4px; --space-8:35.2px;
+    --radius-md:16px; --radius-lg:28px;
+    --shadow-sm:0 1px 2px color-mix(in srgb,#2e2b25 14%,transparent); --shadow-md:0 3px 10px color-mix(in srgb,#2e2b25 16%,transparent); --shadow-lg:0 12px 32px color-mix(in srgb,#2e2b25 22%,transparent);
+    --ok:var(--color-accent-2-600); --active:var(--color-accent-600); --gap:#c98a2f; --stale:var(--color-neutral-500); color-scheme:light;
+  }
+  :root[data-theme="dark"]{ --color-bg:#211b15; --color-surface:#2b241c; --color-text:#f3e9d9; --color-divider:color-mix(in srgb,#f3e9d9 15%,transparent);
+    --color-accent:#e08a4c; --color-accent-2:#a8b884; --ok:var(--color-accent-2-400); --active:var(--color-accent-400); --gap:#e0a94e;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 4px 14px rgba(0,0,0,.45); --shadow-lg:0 16px 40px rgba(0,0,0,.55); color-scheme:dark; }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --color-bg:#211b15; --color-surface:#2b241c; --color-text:#f3e9d9;
+    --color-divider:color-mix(in srgb,#f3e9d9 15%,transparent); --color-accent:#e08a4c; --color-accent-2:#a8b884; --ok:var(--color-accent-2-400);
+    --active:var(--color-accent-400); --gap:#e0a94e; --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 4px 14px rgba(0,0,0,.45); --shadow-lg:0 16px 40px rgba(0,0,0,.55); color-scheme:dark; } }
+
+  *,*::before,*::after{box-sizing:border-box;} html,body{height:100%;}
+  body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3,h4{font-family:var(--font-heading);font-weight:400;line-height:1.12;letter-spacing:-.015em;margin:0;text-wrap:balance;}
+  .mono{font-family:var(--font-mono);} .nums{font-variant-numeric:tabular-nums;} .muted{color:color-mix(in srgb,var(--color-text) 55%,transparent);}
+  a{color:var(--color-accent);} :focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;} ::selection{background:color-mix(in srgb,var(--color-accent) 30%,transparent);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;text-decoration:none;font-family:var(--font-heading);font-size:14px;color:var(--color-text);background:transparent;border:1px solid transparent;padding:9px 16px;border-radius:999px;}
+  .btn-primary{background:var(--color-accent);color:var(--color-bg);} .btn-primary:hover{background:var(--color-accent-600);} .btn-primary:disabled{opacity:.45;cursor:not-allowed;}
+  .btn-secondary{border-color:var(--color-divider);} .btn-secondary:hover{background:color-mix(in srgb,var(--color-text) 7%,transparent);}
+  .btn-lg{font-size:15px;padding:11px 22px;} .btn-block{width:100%;} .btn-icon{width:36px;height:36px;padding:0;}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:999px;white-space:nowrap;}
+  .tag-accent{background:var(--color-accent-100);color:var(--color-accent-800);} .tag-accent-2{background:var(--color-accent-2-100);color:var(--color-accent-2-800);} .tag-neutral{background:var(--color-neutral-100);color:var(--color-neutral-800);} .tag-outline{border:1px solid var(--color-accent);color:var(--color-accent);}
+  :root[data-theme="dark"] .tag-accent{background:color-mix(in srgb,var(--color-accent) 22%,transparent);color:var(--color-accent-200);}
+  :root[data-theme="dark"] .tag-accent-2{background:color-mix(in srgb,var(--color-accent-2) 22%,transparent);color:var(--color-accent-2-200);}
+  :root[data-theme="dark"] .tag-neutral{background:color-mix(in srgb,var(--color-text) 12%,transparent);color:var(--color-text);}
+  .input{min-height:44px;padding:10px 16px;font:inherit;font-size:15px;color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-divider);border-radius:999px;width:100%;}
+  .input:focus-visible{border-color:var(--color-accent);outline-offset:0;} .input.mono{font-family:var(--font-mono);font-size:13.5px;}
+  .field label{display:block;font-size:12px;margin-bottom:6px;color:color-mix(in srgb,var(--color-text) 70%,transparent);}
+  .card{background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-4);}
+  .seg{display:inline-flex;border:1px solid var(--color-divider);border-radius:999px;overflow:hidden;background:var(--color-surface);}
+  .seg button{border:0;background:transparent;color:var(--color-text);padding:9px 16px;cursor:pointer;font-family:var(--font-heading);font-size:13px;display:inline-flex;gap:7px;align-items:center;}
+  .seg button[aria-pressed="true"]{background:var(--color-accent);color:var(--color-bg);}
+
+  /* top bar */
+  .top{display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-6);height:60px;background:var(--color-surface);border-bottom:1px solid var(--color-divider);}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-heading);font-size:20px;letter-spacing:-.02em;cursor:pointer;}
+  .switcher{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 14px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:999px;font-size:13px;cursor:pointer;}
+  .switcher b{font-family:var(--font-heading);font-weight:400;}
+  .spacer{flex:1;}
+  .wrap{max-width:1120px;margin:0 auto;padding:var(--space-8) var(--space-6);}
+  .stepnote{position:fixed;left:16px;bottom:16px;font-size:11px;color:color-mix(in srgb,var(--color-text) 45%,transparent);background:color-mix(in srgb,var(--color-surface) 85%,transparent);padding:6px 12px;border-radius:999px;border:1px solid var(--color-divider);z-index:9;}
+
+  /* projects grid */
+  .phead{display:flex;align-items:flex-end;gap:var(--space-4);margin-bottom:var(--space-6);}
+  .phead h1{font-size:38px;} .phead .sub{font-size:14px;}
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--space-3);}
+  .pcard{background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-4);cursor:pointer;display:flex;flex-direction:column;gap:10px;border:1px solid transparent;transition:transform .12s,box-shadow .12s;}
+  .pcard:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);}
+  .pcard .row1{display:flex;align-items:center;gap:10px;}
+  .pcard .avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-size:18px;flex:none;}
+  .pcard h3{font-size:19px;} .pcard .src{font-family:var(--font-mono);font-size:11.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent);}
+  .pcard .chips{display:flex;gap:6px;flex-wrap:wrap;} .pcard .meta{display:flex;align-items:center;gap:14px;font-size:12px;margin-top:2px;}
+  .cbar{height:6px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;flex:1;} .cbar i{display:block;height:100%;background:linear-gradient(90deg,var(--color-accent),var(--color-accent-2));}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:11px;} .sdot{width:8px;height:8px;border-radius:50%;}
+  .pcard.new{border:1.5px dashed var(--color-divider);background:transparent;align-items:center;justify-content:center;text-align:center;min-height:190px;color:var(--color-accent);gap:8px;}
+  .pcard.new:hover{border-color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 5%,transparent);}
+  .empty{text-align:center;padding:var(--space-8) 0;max-width:520px;margin:0 auto;}
+  .empty .glyph{width:96px;height:96px;margin:0 auto var(--space-4);}
+
+  /* new project */
+  .newgrid{display:grid;grid-template-columns:1.1fr .9fr;gap:var(--space-6);align-items:start;}
+  @media (max-width:900px){.newgrid{grid-template-columns:1fr;}}
+  .steps{display:flex;gap:8px;margin-bottom:var(--space-6);font-size:12px;}
+  .steps .s{display:flex;align-items:center;gap:7px;color:color-mix(in srgb,var(--color-text) 45%,transparent);}
+  .steps .s .n{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--color-divider);display:grid;place-items:center;font-family:var(--font-heading);font-size:12px;}
+  .steps .s.on{color:var(--color-text);} .steps .s.on .n{background:var(--color-accent);color:var(--color-bg);border-color:transparent;}
+  .steps .s.done .n{background:var(--ok);color:var(--color-bg);border-color:transparent;}
+  .kvp{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;padding:7px 0;border-bottom:1px solid color-mix(in srgb,var(--color-text) 7%,transparent);}
+  .kvp .k{color:color-mix(in srgb,var(--color-text) 55%,transparent);} .kvp b{font-family:var(--font-heading);font-weight:400;}
+  .profilebox{opacity:0;max-height:0;overflow:hidden;transition:opacity .3s;} .profilebox.on{opacity:1;max-height:none;}
+
+  /* recon (scan) view */
+  .recon{display:grid;grid-template-columns:1fr 380px;gap:0;height:calc(100vh - 60px);}
+  @media (max-width:1000px){.recon{grid-template-columns:1fr;}.reconside{display:none;}}
+  .reconmain{position:relative;overflow:hidden;background:radial-gradient(120% 120% at 30% 0%,color-mix(in srgb,var(--color-accent) 7%,transparent),transparent 55%),radial-gradient(100% 100% at 85% 100%,color-mix(in srgb,var(--color-accent-2) 8%,transparent),transparent 50%),var(--color-bg);}
+  #scan{position:absolute;inset:0;width:100%;height:100%;} .node text{font-family:var(--font-heading);pointer-events:none;fill:var(--color-text);}
+  .reconhud{position:absolute;left:var(--space-6);top:var(--space-4);z-index:2;}
+  .reconhud .big{font-family:var(--font-heading);font-size:26px;} .reconhud .lbl{font-size:12px;}
+  .reconside{background:var(--color-surface);border-left:1px solid var(--color-divider);padding:var(--space-4);overflow:auto;display:flex;flex-direction:column;gap:var(--space-4);}
+  .lead{display:flex;align-items:center;gap:10px;} .leaddot{width:10px;height:10px;border-radius:50%;background:var(--active);animation:pulse 1.8s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--active) 55%,transparent);}70%{box-shadow:0 0 0 8px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+  .phase{display:flex;align-items:center;gap:10px;font-size:13px;padding:4px 0;} .phase .n{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--color-divider);display:grid;place-items:center;font-size:10px;font-family:var(--font-heading);flex:none;}
+  .phase.done .n{background:var(--ok);color:var(--color-bg);border-color:transparent;} .phase.now .n{background:var(--active);color:var(--color-bg);border-color:transparent;} .phase.now{font-weight:600;}
+  .wlane{display:flex;align-items:center;gap:10px;padding:6px 0;} .wlane .nm{min-width:92px;font-size:13px;display:flex;align-items:center;gap:6px;} .wk-dot{width:7px;height:7px;border-radius:50%;}
+  .wlane .task{font-size:11px;color:color-mix(in srgb,var(--color-text) 55%,transparent);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mini{height:5px;width:70px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;flex:none;} .mini i{display:block;height:100%;background:var(--active);}
+  .h4lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent);margin-bottom:8px;}
+  .bigbar{height:10px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;} .bigbar i{display:block;height:100%;background:linear-gradient(90deg,var(--color-accent),var(--color-accent-2));transition:width .5s;}
+  .tick{font-size:11.5px;color:color-mix(in srgb,var(--color-text) 60%,transparent);border-left:2px solid var(--color-divider);padding-left:10px;margin-top:2px;} .tick .mono{color:var(--color-accent);}
+  .gate{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(460px,90%);text-align:center;background:color-mix(in srgb,var(--color-surface) 96%,transparent);backdrop-filter:blur(6px);border:1px solid var(--color-divider);border-radius:var(--radius-lg);padding:var(--space-6);box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .4s;z-index:5;}
+  .gate.on{opacity:1;pointer-events:auto;}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="top">
+  <div class="brand" onclick="go('projects')"><svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="var(--color-accent)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="4"/><circle cx="7" cy="8" r="2.4"/><circle cx="25" cy="9" r="2.4"/><circle cx="8" cy="24" r="2.4"/><circle cx="24" cy="24" r="2.4"/><path d="M12.6 13.4 8.7 9.6M19.4 13 23 10.4M12.8 18.6 9.4 22.4M19.2 18.8 22.6 22.2"/></svg>Codengram</div>
+  <button class="switcher" id="sw" onclick="go('projects')"><b>Projects</b><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m6 9 6 6 6-6"/></svg></button>
+  <span class="spacer"></span>
+  <button class="btn btn-icon btn-secondary" id="themeBtn" title="Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+  <button class="btn btn-primary" onclick="go('new')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 5v14M5 12h14"/></svg>New project</button>
+</div>
+
+<div id="root"></div>
+<div class="stepnote" id="note"></div>
+
+<script>
+(() => {
+  const root=document.documentElement, C=v=>getComputedStyle(root).getPropertyValue(v).trim(), $=id=>document.getElementById(id);
+  document.getElementById('themeBtn').onclick=()=>{ const dark=root.getAttribute('data-theme')==='dark'||(root.getAttribute('data-theme')!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches); root.setAttribute('data-theme',dark?'light':'dark'); if(view==='recon')drawScan(); };
+  const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const APP_URL='https://claude.ai/code/artifact/b9c2441e-34ee-4bed-91d0-62828935b7fc';
+  let view='projects', empty=false;
+
+  const PROJECTS=[
+    {name:'acme-commerce',src:'~/code/acme-commerce · git 8f2c1a',lang:['Ruby','JS','ERB'],cov:86,feat:42,when:'2 min ago',status:'mapping'},
+    {name:'billing-service',src:'github.com/acme/billing · main',lang:['Go'],cov:100,feat:18,when:'yesterday',status:'ready'},
+    {name:'web-dashboard',src:'~/work/web-dashboard',lang:['TypeScript','React'],cov:100,feat:31,when:'3 days ago',status:'ready'},
+    {name:'legacy-portal',src:'~/archive/legacy-portal · git a91f',lang:['PHP'],cov:64,feat:27,when:'1 week ago',status:'stale'},
+  ];
+  const statusMap={ready:['var(--ok)','ready'],mapping:['var(--active)','mapping'],stale:['var(--stale)','stale · refresh']};
+
+  // ── PROJECTS (home / switcher) ──────────────────────────────────────────────────────────
+  function projectsView(){
+    if(empty) return `<div class="wrap"><div class="empty">
+      <svg class="glyph" viewBox="0 0 96 96" fill="none" stroke="var(--color-accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="48" cy="48" r="10"/><circle cx="22" cy="26" r="6"/><circle cx="74" cy="26" r="6"/><circle cx="22" cy="70" r="6"/><circle cx="74" cy="70" r="6"/>
+        <path d="M40 42 27 31M56 42 69 31M40 54 27 65M56 54 69 65" opacity=".7"/></svg>
+      <h1 style="font-size:32px">No codebases yet</h1>
+      <p class="muted" style="font-size:15px;margin:10px 0 22px">Point Codengram at a repository and it builds a persistent second brain — features, interfaces, identity, data flows — that any AI can use without relearning the code.</p>
+      <button class="btn btn-primary btn-lg" onclick="go('new')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 5v14M5 12h14"/></svg>Add your first repository</button>
+      <div style="margin-top:16px"><button class="btn btn-ghost" onclick="empty=false;render()">See it with sample projects →</button></div>
+    </div></div>`;
+    return `<div class="wrap">
+      <div class="phead"><div><h1>Your codebases</h1><p class="sub muted">Each is a scanned repository with its own brain. Open one, or add another — switch anytime.</p></div>
+        <span class="spacer"></span><button class="btn btn-secondary" onclick="empty=true;render()">Empty state</button></div>
+      <div class="pgrid">
+      ${PROJECTS.map(p=>{const[c,l]=statusMap[p.status];return `<div class="pcard" onclick="openBrain('${esc(p.name)}','${p.status}')">
+        <div class="row1"><div class="avatar">${p.name[0].toUpperCase()}</div><div style="min-width:0"><h3>${esc(p.name)}</h3><div class="src">${esc(p.src)}</div></div></div>
+        <div class="chips">${p.lang.map(x=>`<span class="tag tag-neutral">${x}</span>`).join('')}</div>
+        <div class="meta"><span class="status"><span class="sdot" style="background:${c}"></span>${l}</span><span class="muted nums">${p.feat} features</span><span class="muted">${p.when}</span></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:2px"><span class="cbar"><i style="width:${p.cov}%"></i></span><b class="nums" style="font-size:12px;font-family:var(--font-heading)">${p.cov}%</b></div></div>`;}).join('')}
+        <div class="pcard new" onclick="go('new')"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg><b style="font-family:var(--font-heading);font-size:16px">New project</b><span class="muted" style="font-size:12px">Local folder or Git repo</span></div>
+      </div></div>`;
+  }
+  window.openBrain=(name,status)=>{ if(status==='mapping'){ startRecon(name); go('recon'); } else { window.open(APP_URL,'_blank'); } };
+
+  // ── NEW PROJECT (source + deterministic profile) ────────────────────────────────────────
+  let srcType='local', profiled=false;
+  function newView(){
+    return `<div class="wrap"><div class="steps">
+      <div class="s ${profiled?'done':'on'}"><span class="n">${profiled?'✓':'1'}</span>Choose source</div>
+      <div class="s ${profiled?'on':''}"><span class="n">2</span>Profile &amp; plan</div>
+      <div class="s"><span class="n">3</span>Recon</div></div>
+      <div class="newgrid">
+      <div class="card">
+        <h2 style="font-size:24px;margin-bottom:4px">Add a repository</h2>
+        <p class="muted" style="font-size:13px;margin-bottom:18px">Codengram reads the source read-only and snapshots it. Your code is never modified.</p>
+        <div class="seg" role="group" style="margin-bottom:18px">
+          <button aria-pressed="${srcType==='local'}" onclick="srcType='local';profiled=false;render()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M3 7h6l2 2h10v11H3z"/></svg>Local folder</button>
+          <button aria-pressed="${srcType==='git'}" onclick="srcType='git';profiled=false;render()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M8.4 7.2 15.6 8.6M18 10.5c0 4-6 3-6 7"/></svg>Git repository</button>
+        </div>
+        ${srcType==='local'?`
+          <div class="field" style="margin-bottom:14px"><label>Folder path</label>
+            <div style="display:flex;gap:8px"><input class="input mono" id="path" value="/Users/jay/code/acme-commerce"><button class="btn btn-secondary" style="flex:none">Browse…</button></div></div>`
+        :`<div class="field" style="margin-bottom:14px"><label>Repository URL</label><input class="input mono" id="path" value="https://github.com/acme/acme-commerce.git"></div>
+          <div class="field" style="margin-bottom:14px"><label>Branch / ref</label><input class="input mono" value="main" style="max-width:220px"></div>`}
+        <div class="field" style="margin-bottom:18px"><label>Snapshot identity</label>
+          <div class="seg"><button aria-pressed="true">Git SHA · recommended</button><button>File-tree hash</button></div></div>
+        <button class="btn ${profiled?'btn-secondary':'btn-primary'} btn-lg" onclick="profiled=true;render()">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>${profiled?'Re-profile':'Profile repository'}</button>
+        <span class="muted" style="font-size:12px;margin-left:12px">Deterministic · no AI · a few seconds</span>
+      </div>
+
+      <div class="profilebox ${profiled?'on':''}">
+        <div class="card" style="margin-bottom:var(--space-3)">
+          <div class="h4lbl">Repository profile · snapshot 8f2c1a</div>
+          <div class="kvp"><span class="k">Files · bytes</span><b class="nums">1,204 · 7.6 MB</b></div>
+          <div class="kvp"><span class="k">Est. source tokens</span><b class="nums">~1.9M</b></div>
+          <div class="kvp"><span class="k">Languages</span><b>Ruby, JS, ERB, SQL</b></div>
+          <div class="kvp"><span class="k">Frameworks</span><b>Rails 7, Sidekiq</b></div>
+          <div class="kvp"><span class="k">Entry points</span><b class="nums">14</b></div>
+          <div class="kvp" style="border:0"><span class="k">Inventories</span><b class="nums">routes 188 · services 96 · jobs 12</b></div>
+        </div>
+        <div class="card">
+          <div class="h4lbl">Planned recon</div>
+          <div class="kvp"><span class="k">Workstreams</span><b class="nums">10 · sliced by domain</b></div>
+          <div class="kvp"><span class="k">Active workers</span><b class="nums">4 of 10 · 6 queued</b></div>
+          <div class="kvp"><span class="k">Lead / worker model</span><b>Claude Sonnet · Opus lead</b></div>
+          <div class="kvp" style="border:0"><span class="k">Usable context / worker</span><b class="nums">~520k tokens</b></div>
+          <button class="btn btn-primary btn-block btn-lg" style="width:100%;margin-top:16px" onclick="startRecon('acme-commerce');go('recon')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m5 3 14 9-14 9z"/></svg>Start recon</button>
+          <p class="muted" style="font-size:11.5px;text-align:center;margin-top:8px">Recon only — Codengram maps structure and never assesses security.</p>
+        </div>
+      </div></div></div>`;
+  }
+
+  // ── LIVE RECON (the scan) ───────────────────────────────────────────────────────────────
+  const NS='http://www.w3.org/2000/svg';
+  let scanNodes=[], scanEdges=[], scanTimer=null, coverage=0, phaseIdx=0, done=false;
+  const PHASES=['Scale & shape','Architecture','Domain map','Auth & roles','Communication','Synthesis'];
+  const DOMAINS=['Storefront','Identity','Payments','Admin','Search','Media'];
+  const FEATS=[['Checkout','Storefront'],['Cart','Storefront'],['Catalog','Storefront'],['OAuth sign-in','Identity'],['Sessions','Identity'],['Roles','Identity'],['Refunds','Payments'],['Payouts','Payments'],['Webhooks','Payments'],['Settings','Admin'],['Audit log','Admin'],['Search','Search'],['Uploads','Media']];
+  let mappedFeat=0; const WORKERS=[{n:'Storefront',t:'Checkout',p:0,dot:'var(--active)'},{n:'Identity',t:'OAuth sign-in',p:0,dot:'var(--active)'},{n:'Payments',t:'Refunds',p:0,dot:'var(--active)'},{n:'Search',t:'queued',p:0,dot:'var(--stale)'}];
+  const events=[];
+
+  function startRecon(name){ $('sw')&&($('sw').querySelector('b').textContent=name);
+    scanNodes=[{id:'p',label:name,fam:'project',on:true}]; scanEdges=[]; coverage=0; phaseIdx=0; mappedFeat=0; done=false; events.length=0;
+    DOMAINS.forEach(d=>{scanNodes.push({id:'d_'+d,label:d,fam:'domain',on:false}); scanEdges.push(['p','d_'+d]);});
+    FEATS.forEach(([f,d],i)=>{scanNodes.push({id:'f'+i,label:f,fam:'feature',dom:'d_'+d,on:false,status:'pending'}); scanEdges.push(['d_'+d,'f'+i]);});
+    WORKERS.forEach(w=>{w.p=0;w.t=w.n==='Search'?'queued':w.t;w.dot=w.n==='Search'?'var(--stale)':'var(--active)';});
+    log('snapshot 8f2c1a created — 1,204 files · plan validated: 10 workstreams');
+    setTimeout(()=>{scanNodes.filter(n=>n.fam==='domain').forEach((n,i)=>setTimeout(()=>{n.on=true;drawScan();},120*i));},400);
+    clearInterval(scanTimer); scanTimer=setInterval(tick,900);
+  }
+  function log(t){ const now=new Date(); const ts=String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0'); events.unshift(['08:'+ts,t]); if(events.length>6)events.pop(); if(view==='recon')paintSide(); }
+  function tick(){
+    if(done) return;
+    // map next feature
+    const pend=scanNodes.filter(n=>n.fam==='feature'&&!n.on);
+    if(pend.length){ const n=pend[0]; n.on=true; n.status=(n.label==='Payouts'||n.label==='Uploads')?'gap':'mapped'; mappedFeat++;
+      log(`worker <b>${n.dom.slice(2)}</b> mapped <b>${n.label}</b>` + (n.status==='gap'?' — ⚠ coverage gap':' → graph +'+(4+ (mappedFeat%6))+' nodes')); }
+    coverage=Math.min(100,Math.round(mappedFeat/FEATS.length*100));
+    phaseIdx=Math.min(PHASES.length-1,Math.floor(mappedFeat/FEATS.length*PHASES.length));
+    WORKERS.forEach((w,i)=>{ if(w.dot!=='var(--stale)'){ w.p=Math.min(100,w.p+18+i*4); if(w.p>=100){ const nx=scanNodes.find(n=>n.fam==='feature'&&!n.on&&n.dom.slice(2)===w.n); w.t=nx?nx.label:'reconciling…'; w.p=nx?12:100; } } });
+    if(mappedFeat>=FEATS.length){ done=true; phaseIdx=PHASES.length-1; WORKERS.forEach(w=>{w.dot='var(--ok)';w.t='done';w.p=100;}); log('completion gate — <b>COMPLETE_WITH_GAPS</b> · 2 gaps · brain ready'); setTimeout(()=>{ $('gate')&&$('gate').classList.add('on'); },600); clearInterval(scanTimer); }
+    drawScan(); paintSide();
+  }
+  function reconView(){
+    return `<div class="recon">
+      <div class="reconmain">
+        <div class="reconhud"><div class="lbl muted">Building the brain</div><div class="big" id="hudpct">0%</div></div>
+        <svg id="scan" aria-label="Recon in progress"></svg>
+        <div class="gate" id="gate">
+          <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5" style="margin-bottom:8px"><path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>
+          <h2 style="font-size:26px">Brain published</h2>
+          <p class="muted" style="font-size:14px;margin:8px 0 6px">acme-commerce · 42 features · 3,410 nodes · <b>86% mapped</b></p>
+          <div style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:18px"><span class="tag tag-accent-2">Completion gate: COMPLETE_WITH_GAPS</span><span class="tag tag-neutral">2 coverage gaps</span></div>
+          <div style="display:flex;gap:10px;justify-content:center"><button class="btn btn-primary btn-lg" onclick="window.open('${APP_URL}','_blank')"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="1.6"/><circle cx="19" cy="6" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="19" cy="18" r="1.6"/></svg>Open brain</button><button class="btn btn-secondary btn-lg" onclick="go('projects')">All projects</button></div>
+        </div>
+      </div>
+      <aside class="reconside" id="side"></aside></div>`;
+  }
+  function paintSide(){ const el=$('side'); if(!el) return;
+    el.innerHTML=`
+      <div><div class="lead"><span class="leaddot"></span><b style="font-family:var(--font-heading);font-size:16px">Lead session</b><span class="tag tag-accent" style="margin-left:auto">${done?'reconciling':'executing'} · v2</span></div>
+        <p class="muted" style="font-size:12px;margin-top:6px">10 workstreams · ${done?'0':'3'} active · ${done?'0':'6'} queued · ~520k ctx/worker</p></div>
+      <div><div class="h4lbl">Recon phases</div>${PHASES.map((p,i)=>`<div class="phase ${i<phaseIdx?'done':i===phaseIdx&&!done?'now':i<=phaseIdx?'done':''}"><span class="n">${i<phaseIdx||done?'✓':i+1}</span>${p}</div>`).join('')}</div>
+      <div><div class="h4lbl">Workers</div>${WORKERS.map(w=>`<div class="wlane"><span class="nm"><span class="wk-dot" style="background:${w.dot}"></span>${w.n}</span><span class="task">${esc(w.t)}</span><span class="mini"><i style="width:${w.p}%"></i></span></div>`).join('')}</div>
+      <div><div class="h4lbl">Coverage</div><div class="bigbar"><i style="width:${coverage}%"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:6px"><span class="muted">${mappedFeat}/${FEATS.length} features · 2 gaps</span><b class="nums">${coverage}%</b></div></div>
+      <div><div class="h4lbl">Events</div>${events.map(([t,x])=>`<div class="tick"><span class="mono">${t}</span> ${x}</div>`).join('')}</div>`;
+    $('hudpct')&&($('hudpct').textContent=coverage+'%');
+  }
+  const FAMS={project:{c:'--color-neutral-800',r:22},domain:{c:'--color-neutral-700',r:15},feature:{c:'--color-accent',r:9}};
+  function drawScan(){ const svg=$('scan'); if(!svg) return; const W=svg.clientWidth,H=svg.clientHeight,cx=W/2,cy=H/2;
+    const st=document.createElementNS(NS,'style'); const p=scanNodes[0]; p.x=cx;p.y=cy;
+    const R1=Math.min(W,H)*0.20,R2=Math.min(W,H)*0.37, doms=scanNodes.filter(n=>n.fam==='domain');
+    doms.forEach((d,i)=>{const a=-Math.PI/2+i/doms.length*Math.PI*2; d.x=cx+Math.cos(a)*R1; d.y=cy+Math.sin(a)*R1; d._a=a;});
+    const by={}; scanNodes.filter(n=>n.fam==='feature').forEach(f=>{(by[f.dom]=by[f.dom]||[]).push(f);});
+    doms.forEach(d=>{const fs=by[d.id]||[]; fs.forEach((f,j)=>{const a=d._a+(fs.length>1?(j/(fs.length-1)-0.5)*0.62:0),rr=R2+(j%2?16:-6); f.x=cx+Math.cos(a)*rr; f.y=cy+Math.sin(a)*rr;});});
+    svg.innerHTML=''; st.textContent='@keyframes spin{to{stroke-dashoffset:-24}}@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}'; svg.appendChild(st);
+    const g=document.createElementNS(NS,'g'); svg.appendChild(g);
+    scanEdges.forEach(([a,b])=>{const na=scanNodes.find(n=>n.id===a),nb=scanNodes.find(n=>n.id===b); if(!na.on||!nb.on)return;
+      const mx=(na.x+nb.x)/2,my=(na.y+nb.y)/2,dx=nb.x-na.x,dy=nb.y-na.y; const path=document.createElementNS(NS,'path');
+      path.setAttribute('d',`M${na.x} ${na.y} Q${mx-dy*0.12} ${my+dx*0.12} ${nb.x} ${nb.y}`); path.setAttribute('fill','none');
+      path.setAttribute('stroke',C('--color-accent')); path.setAttribute('stroke-width','1'); path.setAttribute('opacity','.5'); g.appendChild(path);});
+    scanNodes.forEach(n=>{ if(!n.on)return; const f=FAMS[n.fam],gg=document.createElementNS(NS,'g'); gg.setAttribute('transform',`translate(${n.x} ${n.y})`); gg.style.transformOrigin=`${n.x}px ${n.y}px`; gg.style.animation='pop .35s ease';
+      const c=document.createElementNS(NS,'circle'); c.setAttribute('r',f.r); c.setAttribute('fill',C(f.c));
+      if(n.status==='mapped'){c.setAttribute('stroke',C('--ok'));c.setAttribute('stroke-width','2');}
+      else if(n.status==='gap'){c.setAttribute('stroke',C('--gap'));c.setAttribute('stroke-width','2');c.setAttribute('stroke-dasharray','4 4');}
+      else if(n.fam==='feature'){c.setAttribute('stroke',C('--active'));c.setAttribute('stroke-width','2.5');c.setAttribute('stroke-dasharray','3 3');c.style.animation='spin 6s linear infinite';}
+      gg.appendChild(c);
+      if(n.fam!=='feature'||n.status){const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',f.r+13);t.setAttribute('font-size',n.fam==='project'?14:n.fam==='domain'?12:10);t.setAttribute('opacity','.9');t.textContent=n.label;gg.appendChild(t);}
+      g.appendChild(gg);});
+  }
+
+  // ── Router ──────────────────────────────────────────────────────────────────────────────
+  const NOTES={projects:'Home / switcher — every scanned repo. “New project” or “Empty state” to explore.',new:'New project — pick a source, Profile (deterministic), then Start recon.',recon:'Live recon — the scan running. Watch coverage climb; ends at the completion gate → Open brain.'};
+  window.go=v=>{ view=v; render(); };
+  function render(){ const r=$('root'); $('sw').style.display=view==='projects'?'none':'flex'; $('note').textContent=NOTES[view]||'';
+    if(view==='projects') r.innerHTML=projectsView();
+    else if(view==='new') r.innerHTML=newView();
+    else if(view==='recon'){ r.innerHTML=reconView(); requestAnimationFrame(()=>{drawScan();paintSide();}); new ResizeObserver(()=>{if(view==='recon')drawScan();}).observe($('scan')); }
+  }
+  render();
+})();
+</script>

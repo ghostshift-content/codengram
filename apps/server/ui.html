@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Codengram</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --color-bg:#f5ead8; --color-surface:#ebddc5; --color-text:#201e1d; --color-accent:#c67139; --color-accent-2:#7a8a5e;
+    --color-divider:color-mix(in srgb,#201e1d 16%,transparent);
+    --color-neutral-100:#f9f4ed; --color-neutral-200:#eee7db; --color-neutral-300:#dcd3c4; --color-neutral-400:#c0b6a5;
+    --color-neutral-500:#a19786; --color-neutral-600:#82796a; --color-neutral-700:#645c50; --color-neutral-800:#474238; --color-neutral-900:#2e2b25;
+    --color-accent-100:#fff2eb; --color-accent-200:#ffe1d0; --color-accent-300:#ffc6a5; --color-accent-400:#f6a06b; --color-accent-500:#d67f48;
+    --color-accent-600:#b2622d; --color-accent-700:#8c491a; --color-accent-800:#643312; --color-accent-900:#402310;
+    --color-accent-2-100:#f0fae1; --color-accent-2-200:#e1eecc; --color-accent-2-300:#ccdbb2; --color-accent-2-400:#aebf92; --color-accent-2-500:#8fa073;
+    --color-accent-2-600:#728157; --color-accent-2-700:#56633f; --color-accent-2-800:#3d472b; --color-accent-2-900:#272e1b;
+    --font-heading:"Caprasimo",Georgia,serif; --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif; --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --space-1:4.4px; --space-2:8.8px; --space-3:13.2px; --space-4:17.6px; --space-6:26.4px; --space-8:35.2px;
+    --radius-sm:8px; --radius-md:16px; --radius-lg:28px;
+    --shadow-sm:0 1px 2px color-mix(in srgb,#2e2b25 14%,transparent); --shadow-md:0 3px 10px color-mix(in srgb,#2e2b25 16%,transparent); --shadow-lg:0 12px 32px color-mix(in srgb,#2e2b25 22%,transparent);
+    --ok:var(--color-accent-2-600); --active:var(--color-accent-600); --gap:#c98a2f; --stale:var(--color-neutral-500); color-scheme:light;
+    --node-1:var(--color-neutral-800); --node-2:var(--color-neutral-700);
+  }
+
+  *,*::before,*::after{box-sizing:border-box;} html,body{height:100%;}
+  body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3,h4{font-family:var(--font-heading);font-weight:400;line-height:1.14;letter-spacing:-.015em;margin:0;text-wrap:balance;}
+  .mono{font-family:var(--font-mono);} .nums{font-variant-numeric:tabular-nums;} .muted{color:color-mix(in srgb,var(--color-text) 55%,transparent);}
+  a{color:var(--color-accent);} :focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;} ::selection{background:color-mix(in srgb,var(--color-accent) 30%,transparent);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;text-decoration:none;font-family:var(--font-heading);font-size:14px;color:var(--color-text);background:transparent;border:1px solid transparent;padding:8px 15px;border-radius:999px;}
+  .btn-primary{background:var(--color-accent);color:var(--color-bg);} .btn-primary:hover{background:var(--color-accent-600);} .btn-primary:disabled{opacity:.45;cursor:default;}
+  .btn-secondary{border-color:var(--color-divider);} .btn-secondary:hover{background:color-mix(in srgb,var(--color-text) 7%,transparent);}
+  .btn-ghost{padding:8px 6px;} .btn-lg{font-size:15px;padding:11px 22px;} .btn-block{width:100%;} .btn-icon{width:36px;height:36px;padding:0;} .btn-sm{font-size:13px;padding:6px 12px;}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:999px;white-space:nowrap;}
+  .tag-accent{background:var(--color-accent-100);color:var(--color-accent-800);} .tag-accent-2{background:var(--color-accent-2-100);color:var(--color-accent-2-800);} .tag-neutral{background:var(--color-neutral-100);color:var(--color-neutral-800);} .tag-outline{border:1px solid var(--color-accent);color:var(--color-accent);}
+  .input{min-height:34px;padding:6px 14px;font:inherit;font-size:13px;color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-divider);border-radius:999px;width:100%;}
+  .input.big{min-height:44px;font-size:15px;padding:10px 16px;} .input.mono{font-family:var(--font-mono);font-size:13.5px;} .input:focus-visible{border-color:var(--color-accent);outline-offset:0;}
+  .field label{display:block;font-size:12px;margin-bottom:6px;color:color-mix(in srgb,var(--color-text) 70%,transparent);}
+  .card{background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-4);}
+  .table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .table th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 58%,transparent);padding:9px 12px;border-bottom:1px solid var(--color-divider);position:sticky;top:0;background:var(--color-surface);}
+  .table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--color-text) 8%,transparent);vertical-align:middle;} .table tbody tr:hover{background:color-mix(in srgb,var(--color-text) 4%,transparent);}
+  .h4lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent);margin-bottom:10px;}
+  .cite{font-family:var(--font-mono);font-size:11.5px;color:color-mix(in srgb,var(--color-text) 60%,transparent);}
+  .prov{font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:999px;} .prov.high{background:var(--color-accent-2-100);color:var(--color-accent-2-800);} .prov.med{background:var(--color-accent-100);color:var(--color-accent-800);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);} .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);} @media(max-width:980px){.grid2,.grid3{grid-template-columns:1fr;}}
+  .rel{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;} .spacer{flex:1;} .cov{display:inline-flex;align-items:center;gap:6px;font-size:12px;} .covdot{width:9px;height:9px;border-radius:50%;flex:none;}
+
+  .top{display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-4);height:56px;background:var(--color-surface);border-bottom:1px solid var(--color-divider);z-index:8;position:relative;}
+  .brand{display:flex;align-items:center;gap:9px;font-family:var(--font-heading);font-size:19px;letter-spacing:-.02em;cursor:pointer;}
+  .switcher{display:flex;align-items:center;gap:8px;padding:5px 9px 5px 13px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:999px;font-size:13px;cursor:pointer;position:relative;} .switcher b{font-family:var(--font-heading);font-weight:400;}
+  .recon-pill{display:inline-flex;align-items:center;gap:8px;padding:5px 12px 5px 10px;border-radius:999px;font-size:12px;background:color-mix(in srgb,var(--color-accent) 12%,transparent);color:var(--color-accent-800);cursor:pointer;}
+  .rdot{width:8px;height:8px;border-radius:50%;background:var(--active);animation:pulse 2s infinite;} @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--active) 55%,transparent);}70%{box-shadow:0 0 0 7px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+  .conn{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 11px;border-radius:999px;cursor:default;background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--color-accent-2-800);}
+  .conn.out{background:color-mix(in srgb,var(--gap) 18%,transparent);color:var(--color-accent-800);cursor:pointer;}
+  .conn-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);} .conn.out .conn-dot{background:var(--gap);}
+  .connpop{position:fixed;top:60px;right:16px;width:288px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:16px;z-index:30;}
+  .connpop code{font-family:var(--font-mono);font-size:12px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:6px;padding:1px 6px;}
+  .menu{position:absolute;top:44px;left:0;min-width:230px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:6px;z-index:20;display:none;}
+  .menu.on{display:block;} .menu .mi{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:10px;cursor:pointer;font-size:13px;} .menu .mi:hover{background:color-mix(in srgb,var(--color-text) 6%,transparent);} .menu .mdot{width:8px;height:8px;border-radius:50%;}
+
+  #body{height:calc(100vh - 56px);overflow:hidden;}
+  .obmain{height:100%;overflow:auto;}
+  .pbody{display:grid;grid-template-columns:224px 1fr;grid-template-rows:1fr 46px;grid-template-areas:"rail main" "strip strip";height:100%;}
+  .rail{grid-area:rail;background:var(--color-surface);border-right:1px solid var(--color-divider);padding:var(--space-3) var(--space-2);display:flex;flex-direction:column;gap:2px;overflow:auto;}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:999px;cursor:pointer;font-size:14px;color:var(--color-text);} .navitem svg{opacity:.72;flex:none;} .navitem .cnt{margin-left:auto;font-size:11px;color:color-mix(in srgb,var(--color-text) 45%,transparent);}
+  .navitem:hover{background:color-mix(in srgb,var(--color-text) 6%,transparent);} .navitem[aria-current="page"]{background:var(--color-accent);color:var(--color-bg);} .navitem[aria-current="page"] svg{opacity:1;} .navitem[aria-current="page"] .cnt{color:color-mix(in srgb,var(--color-bg) 80%,transparent);}
+  .main{grid-area:main;overflow:auto;position:relative;}
+  .vhead{display:flex;align-items:flex-end;gap:var(--space-3);padding:var(--space-6) var(--space-6) var(--space-3);} .vhead h1{font-size:30px;} .vbody{padding:0 var(--space-6) var(--space-8);}
+  .stats{display:flex;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4);} .stat{background:var(--color-surface);border-radius:var(--radius-lg);padding:14px 18px;min-width:112px;} .stat .n{font-family:var(--font-heading);font-size:26px;line-height:1;} .stat .l{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 52%,transparent);margin-top:6px;}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:var(--space-3);flex-wrap:wrap;} .chip{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--color-divider);cursor:pointer;background:var(--color-surface);} .chip[aria-pressed="true"]{background:var(--color-accent);color:var(--color-bg);border-color:transparent;}
+  .tablewrap{background:var(--color-surface);border-radius:var(--radius-lg);overflow:auto;max-height:calc(100vh - 340px);}
+  .featuredoc{display:flex;flex-direction:column;gap:var(--space-3)} .featuredoc .card{overflow:hidden}
+  .featuredoc h3{font-size:17px;margin:18px 0 8px}.featuredoc h3:first-child{margin-top:0}.featuredoc p{font-size:13.5px;line-height:1.65;margin:7px 0}
+  .featuredoc ul,.featuredoc ol{padding-left:22px;margin:8px 0}.featuredoc li{font-size:13px;line-height:1.55;margin:3px 0}
+  .doc-tablewrap{overflow:auto;max-width:100%;border:1px solid color-mix(in srgb,var(--color-text) 8%,transparent);border-radius:var(--radius-sm);margin:8px 0 14px}
+  .doc-tablewrap .table{min-width:760px}.doc-tablewrap th{position:sticky;top:0;background:var(--color-surface);z-index:1;white-space:nowrap}.doc-tablewrap td{vertical-align:top;min-width:130px;max-width:360px;overflow-wrap:anywhere}
+  .strip{grid-area:strip;display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-4);background:var(--color-surface);border-top:1px solid var(--color-divider);font-size:12px;overflow:hidden;} .strip .seg2{display:flex;align-items:center;gap:8px;white-space:nowrap;} .strip .sep{width:1px;height:20px;background:var(--color-divider);}
+  .worker{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--color-bg);border:1px solid var(--color-divider);} .wk-dot{width:7px;height:7px;border-radius:50%;} .bar{height:6px;width:100px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;} .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--color-accent),var(--color-accent-2));} .ticker{flex:1;overflow:hidden;} .ticker .ev{color:color-mix(in srgb,var(--color-text) 62%,transparent);} .ev .mono{color:var(--color-accent);}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:var(--space-8) var(--space-6);}
+  .phead{display:flex;align-items:flex-end;gap:var(--space-4);margin-bottom:var(--space-6);} .phead h1{font-size:36px;}
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--space-3);}
+  .pcard{background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-4);cursor:pointer;display:flex;flex-direction:column;gap:10px;transition:transform .12s,box-shadow .12s;} .pcard:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);}
+  .pcard .row1{display:flex;align-items:center;gap:10px;} .avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-size:18px;flex:none;} .pcard h3{font-size:19px;} .src{font-family:var(--font-mono);font-size:11.5px;color:color-mix(in srgb,var(--color-text) 55%,transparent);word-break:break-all;}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;} .pmeta{display:flex;align-items:center;gap:14px;font-size:12px;} .cbar{height:6px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;flex:1;} .cbar i{display:block;height:100%;background:linear-gradient(90deg,var(--color-accent),var(--color-accent-2));}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:11px;} .sdot{width:8px;height:8px;border-radius:50%;}
+  .pcard.scanning{outline:1px solid color-mix(in srgb,var(--active) 55%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--active) 8%,transparent);} .pcard.scanning .sdot{animation:pulse 1.6s infinite;}
+  .pcard.new{border:1.5px dashed var(--color-divider);background:transparent;align-items:center;justify-content:center;text-align:center;min-height:190px;color:var(--color-accent);gap:8px;} .pcard.new:hover{border-color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 5%,transparent);}
+  .empty{text-align:center;padding:var(--space-8) 0;max-width:520px;margin:0 auto;} .glyph{width:92px;height:92px;margin:0 auto var(--space-4);}
+
+  .recon{display:grid;grid-template-columns:1fr 372px;height:100%;} @media(max-width:1000px){.recon{grid-template-columns:1fr;grid-template-rows:minmax(46%,1fr) auto;}.reconside{border-left:none;border-top:1px solid var(--color-divider);max-height:46vh;}}
+  .reconmain{position:relative;overflow:hidden;background:radial-gradient(120% 120% at 30% 0%,color-mix(in srgb,var(--color-accent) 7%,transparent),transparent 55%),radial-gradient(100% 100% at 85% 100%,color-mix(in srgb,var(--color-accent-2) 8%,transparent),transparent 50%),var(--color-bg);}
+  #scan{position:absolute;inset:0;width:100%;height:100%;} .node text{font-family:var(--font-heading);pointer-events:none;fill:var(--color-text);}
+  .reconhud{position:absolute;left:var(--space-6);top:var(--space-4);z-index:2;} .reconhud .big{font-family:var(--font-heading);font-size:26px;} .reconhud .lbl{font-size:12px;}
+  .reconside{background:var(--color-surface);border-left:1px solid var(--color-divider);padding:var(--space-4);overflow:auto;display:flex;flex-direction:column;gap:var(--space-4);}
+  .lead{display:flex;align-items:center;gap:10px;} .leaddot{width:10px;height:10px;border-radius:50%;background:var(--active);animation:pulse 1.8s infinite;}
+  .phase{display:flex;align-items:center;gap:10px;font-size:13px;padding:4px 0;} .phase .n{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--color-divider);display:grid;place-items:center;font-size:10px;font-family:var(--font-heading);flex:none;} .phase.done .n{background:var(--ok);color:var(--color-bg);border-color:transparent;} .phase.now .n{background:var(--active);color:var(--color-bg);border-color:transparent;} .phase.now{font-weight:600;}
+  .bigbar{height:10px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;} .bigbar i{display:block;height:100%;background:linear-gradient(90deg,var(--color-accent),var(--color-accent-2));transition:width .4s;}
+  .tick{font-size:11.5px;color:color-mix(in srgb,var(--color-text) 68%,transparent);border-left:2px solid var(--color-divider);padding-left:10px;margin:3px 0;} .tick .mono{color:var(--color-accent);} .tick.gap{border-color:var(--gap);} .tick.ok{border-color:var(--ok);}
+  .gate{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(460px,90%);text-align:center;background:color-mix(in srgb,var(--color-surface) 96%,transparent);backdrop-filter:blur(6px);border:1px solid var(--color-divider);border-radius:var(--radius-lg);padding:var(--space-6);box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .4s;z-index:5;} .gate.on{opacity:1;pointer-events:auto;}
+
+  .brain{position:absolute;inset:0;overflow:hidden;background:radial-gradient(120% 120% at 30% 0%,color-mix(in srgb,var(--color-accent) 6%,transparent),transparent 55%),radial-gradient(100% 100% at 90% 100%,color-mix(in srgb,var(--color-accent-2) 7%,transparent),transparent 50%),var(--color-bg);}
+  #net{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none;} #net.dragging{cursor:grabbing;} .graphctl{position:absolute;left:18px;bottom:18px;display:flex;gap:6px;background:color-mix(in srgb,var(--color-surface) 90%,transparent);border:1px solid var(--color-divider);border-radius:999px;padding:5px;z-index:5}.graphctl .btn{font-size:17px}.legend{position:absolute;right:18px;bottom:18px;background:color-mix(in srgb,var(--color-surface) 88%,transparent);backdrop-filter:blur(4px);border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:11px 13px;font-size:11px;} .legend .row{display:flex;align-items:center;gap:8px;padding:2px 0;} .legend .sw{width:11px;height:11px;border-radius:50%;flex:none;}
+  .tt{position:absolute;pointer-events:none;background:var(--color-neutral-900);color:var(--color-neutral-100);font-size:12px;padding:5px 9px;border-radius:8px;opacity:0;transform:translate(-50%,-140%);transition:opacity .12s;z-index:6;white-space:nowrap;}
+  .binsp{position:absolute;right:18px;top:18px;width:300px;max-height:calc(100% - 56px);overflow:auto;background:color-mix(in srgb,var(--color-surface) 94%,transparent);backdrop-filter:blur(6px);border:1px solid var(--color-divider);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow-md);}
+  .tl{position:relative;padding-left:26px;} .tl::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:2px;background:var(--color-divider);} .tl .it{position:relative;padding:9px 0;} .tl .it::before{content:"";position:absolute;left:-22px;top:13px;width:12px;height:12px;border-radius:50%;background:var(--color-accent);border:2px solid var(--color-bg);} .tl .it.ok::before{background:var(--ok);} .tl .it.gap::before{background:var(--gap);} .tl .t{font-size:11px;color:color-mix(in srgb,var(--color-text) 50%,transparent);}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+<style>
+  .filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 var(--space-3);}
+  .filterbar .input{margin-left:auto;max-width:280px;}
+  .filterchip{border:1px solid var(--color-divider);border-radius:999px;padding:6px 13px;font-size:12px;cursor:pointer;background:transparent;color:var(--color-text);}
+  .filterchip.on,.filterchip:hover{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-bg);}
+  .scrollcard{background:var(--color-surface);border-radius:var(--radius-lg);overflow:auto;max-height:calc(100vh - 350px);}
+  .matrix{min-width:860px;}.matrix th:not(:first-child){text-align:center;max-width:120px;}.matrix td:not(:first-child){text-align:center;}.matrix .yes{color:var(--ok);font-size:18px;}.matrix .no{color:color-mix(in srgb,var(--color-text) 28%,transparent);}
+  .heatmap{display:grid;grid-template-columns:minmax(160px,260px) repeat(10,minmax(72px,1fr));gap:3px;min-width:880px;align-items:center;}.heatmap .hh{font-size:10px;writing-mode:vertical-rl;transform:rotate(180deg);height:92px;padding:6px;color:color-mix(in srgb,var(--color-text) 55%,transparent);}
+  .heatmap .hn{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px;}.heatmap .cell{height:28px;border-radius:4px;background:color-mix(in srgb,var(--color-text) 7%,transparent);display:grid;place-items:center;font-size:10px;color:color-mix(in srgb,var(--color-text) 65%,transparent);}
+  .heatmap .cell.on{background:color-mix(in srgb,var(--ok) 58%,var(--color-surface));color:var(--color-text);}
+  .splitview{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:var(--space-3);align-items:start;}.boundary{border:1px solid var(--color-divider);border-radius:999px;padding:10px 14px;margin:8px 0;display:flex;align-items:center;gap:10px;}
+  .exportgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3);}.exportcard{display:flex;flex-direction:column;min-height:220px;}.exportcard .btn{margin-top:auto;}
+  @media (max-width:980px){.splitview,.exportgrid{grid-template-columns:1fr;}.filterbar .input{margin-left:0;max-width:none;}.vhead{align-items:flex-start;flex-direction:column;}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand" onclick="goHome()"><svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="var(--color-accent)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="4"/><circle cx="7" cy="8" r="2.4"/><circle cx="25" cy="9" r="2.4"/><circle cx="8" cy="24" r="2.4"/><circle cx="24" cy="24" r="2.4"/><path d="M12.6 13.4 8.7 9.6M19.4 13 23 10.4M12.8 18.6 9.4 22.4M19.2 18.8 22.6 22.2"/></svg>Codengram</div>
+  <div id="topmid" style="display:flex;align-items:center;gap:var(--space-3);flex:1;"></div>
+</div>
+<div id="connpop"></div>
+<div id="body"></div>
+
+<script>
+(() => {
+  const root=document.documentElement, C=v=>getComputedStyle(root).getPropertyValue(v).trim(), $=id=>document.getElementById(id);
+  const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const api=(u,o)=>fetch('/api'+u,o).then(r=>r.json());
+  const NS='http://www.w3.org/2000/svg';
+  // Robust SVG sizing: clientWidth can be 0 before layout settles (which drew every node at 0,0 — the "corner" bug).
+  // Fall back to the bounding rect, then the parent's rect, then a sane default so a graph is NEVER drawn at 0×0.
+  const dims=(el)=>{ const r=el.getBoundingClientRect(); let W=el.clientWidth||r.width, H=el.clientHeight||r.height;
+    if((!W||!H)&&el.parentElement){ const pr=el.parentElement.getBoundingClientRect(); W=W||pr.width; H=H||pr.height; }
+    return { W: Math.max(320, W||900), H: Math.max(240, H||560) }; };
+  let mode='home', view='brain', AI=false, PROJECTS=[], cur=null, PD=null, es=null;
+  // Redraw the active graph on window resize so it always fits the viewport.
+  addEventListener('resize', ()=>{ if(mode==='recon') drawScan(); else if(mode==='project'&&view==='brain') drawBrain(); });
+
+  async function boot(){
+    root.setAttribute('data-theme','light');
+    try{ AI=(await api('/health')).ai; }catch{} await loadProjects(); render();
+    setInterval(async()=>{ if(mode!=='home')return; await loadProjects(); if(mode==='home')render(); },3000);
+  }
+  async function loadProjects(){ try{
+    const projects=(await api('/projects')).projects||[];
+    PROJECTS=await Promise.all(projects.map(async p=>{ try{
+      const a=await api('/projects/'+encodeURIComponent(p.id)+'/activity');
+      if(a.running) return {...p,status:'scanning',cov:a.progress||0,active_mission:a.mission,runtime:{phase:a.phase||'planning',progress:a.progress||0,mapped_features:a.mapped_features||0,planned_features:a.planned_features||0,latest:(a.events&&a.events[0]&&a.events[0].label)||'Recon active'}};
+    }catch{} return p; }));
+  }catch{ PROJECTS=[]; } }
+
+  const connChip=()=>`<span class="conn ${AI?'':'out'}" ${AI?'':'onclick="toggleConn()"'} title="${AI?'Connected through local Claude subscription':'Deterministic mode — click for how to enable Claude'}"><span class="conn-dot"></span>${AI?'Claude connected':'Deterministic mode'}</span>`;
+  window.toggleConn=()=>{ const el=$('connpop'); if(!el)return; if(el.innerHTML){el.innerHTML='';return;}
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="conn-dot" style="background:var(--gap)"></span><b style="font-family:var(--font-heading);font-size:15px">Deterministic mode</b></div><p class="muted" style="font-size:13px;margin:0 0 10px">Codengram runs fully without AI — recon, graph and cited Ask all work. To add Claude-backed answers, use your local Claude subscription: run <code>claude</code>, then <code>/login</code>, and install the Agent SDK. No credentials are ever handled by Codengram.</p><div id="connresult" class="muted" style="font-size:12.5px;margin-bottom:10px"></div><div style="display:flex;gap:8px"><button class="btn btn-primary" style="flex:1" onclick="checkLogin()">Check Claude login</button><button class="btn btn-secondary" onclick="toggleConn()">Close</button></div>`; };
+  window.checkLogin=async()=>{ const r=$('connresult'); if(r)r.textContent='checking… (a quick round-trip to Claude)';
+    try{ const d=await api('/doctor?probe=1'); const c=(d.checks||[]).find(x=>/Claude/.test(x.name))||{};
+      if(c.status==='ok'){ if(r)r.innerHTML='<span style="color:var(--ok)">✓ '+esc(c.detail||'Claude login working')+'</span>'; }
+      else{ if(r)r.innerHTML='<span style="color:var(--gap)">⚠ '+esc(c.detail||'not logged in')+'</span>'+(c.fix?'<br><span class="muted">→ '+esc(c.fix)+'</span>':''); }
+    }catch{ if(r)r.textContent='could not run the check'; } };
+  const stat=(n,l)=>`<div class="stat"><div class="n nums">${n}</div><div class="l">${l}</div></div>`;
+  const covDot=(rows)=>`<span class="cov"><span class="covdot" style="background:${rows>0?'var(--ok)':'var(--gap)'}"></span>${rows>0?'mapped':'coverage gap'}</span>`;
+  const idName=(id)=>id?id.replace(/^(feature|endpoint|service|authcheck|file|domain|project|snapshot|route|job|graphql|integration|data_store|process):/,''):'';
+
+  // ── HOME ────────────────────────────────────────────────────────────────
+  function homeView(){
+    if(!PROJECTS.length) return `<div class="obmain"><div class="wrap"><div class="empty">
+      <svg class="glyph" viewBox="0 0 96 96" fill="none" stroke="var(--color-accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="48" cy="48" r="10"/><circle cx="22" cy="26" r="6"/><circle cx="74" cy="26" r="6"/><circle cx="22" cy="70" r="6"/><circle cx="74" cy="70" r="6"/><path d="M40 42 27 31M56 42 69 31M40 54 27 65M56 54 69 65" opacity=".7"/></svg>
+      <h1 style="font-size:32px">No codebases yet</h1><p class="muted" style="font-size:15px;margin:10px 0 22px">Point Codengram at a repository and it builds a persistent second brain — features, interfaces, identity, data flows — that any AI can use without relearning the code. <b>Recon only.</b></p>
+      <button class="btn btn-primary btn-lg" onclick="goNew()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 5v14M5 12h14"/></svg>Add your first repository</button></div></div></div>`;
+    return `<div class="obmain"><div class="wrap"><div class="phead"><div><h1>Your codebases</h1><p class="muted">Each is a scanned repository with its own brain. Open one, or add another.</p></div><span class="spacer"></span><button class="btn btn-primary" onclick="goNew()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 5v14M5 12h14"/></svg>New project</button></div>
+      <div class="pgrid">${PROJECTS.map(p=>{const live=p.status==='scanning',c=live?'var(--active)':p.status==='ready'?'var(--ok)':'var(--gap)';return `<div class="pcard ${live?'scanning':''}" onclick='cardClick(${JSON.stringify(p.id)},${JSON.stringify(p.status)})'>
+        <div class="row1"><div class="avatar">${esc((p.name||'?')[0].toUpperCase())}</div><div style="min-width:0"><h3>${esc(p.name)}</h3><div class="src">${esc(p.source||p.source_root||'')}</div></div></div>
+        <div class="chips">${(p.languages||[]).slice(0,4).map(x=>`<span class="tag tag-neutral">${esc(x)}</span>`).join('')||'<span class="tag tag-neutral">unscanned</span>'}</div>
+        <div class="pmeta"><span class="status"><span class="sdot" style="background:${c}"></span>${live?'SCANNING · '+esc((p.runtime&&p.runtime.phase)||'active'):p.status==='ready'?(p.gate||'ready'):'not scanned'}</span><span class="muted nums">${p.features||0} ${live?'last sealed features':'features'}</span></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:2px"><span class="cbar"><i style="width:${p.cov||0}%"></i></span><b class="nums" style="font-size:12px;font-family:var(--font-heading)">${p.cov||0}%</b></div>
+        ${live?`<div class="cite" style="font-size:10px;color:var(--active)">${esc((p.runtime&&p.runtime.latest)||'Recon active')} · ${esc(p.active_mission||'')}</div>`:p.mission?`<div class="cite" style="font-size:10px">scan ${esc(p.mission)}</div>`:''}</div>`;}).join('')}
+        <div class="pcard new" onclick="goNew()"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg><b style="font-family:var(--font-heading);font-size:16px">New project</b><span class="muted" style="font-size:12px">Local repository</span></div>
+      </div></div></div>`;
+  }
+  function newView(){ return `<div class="obmain"><div class="wrap" style="max-width:600px">
+    <button class="btn btn-ghost" onclick="goHome()" style="margin-bottom:18px;color:var(--color-accent)">← Projects</button>
+    <div class="card"><h2 style="font-size:26px;margin-bottom:4px">Add a repository</h2>
+      <p class="muted" style="font-size:13px;margin-bottom:20px">Point Codengram at a local repository and it builds its second brain. Source is read-only — your code is never modified.</p>
+      <div class="field" style="margin-bottom:8px"><label>Repository path</label><input class="input big mono" id="repopath" placeholder="/absolute/path/to/your/repo"></div>
+      <div id="newerr" class="cite" style="color:var(--gap);min-height:16px;margin-bottom:12px"></div>
+      <button class="btn btn-primary btn-lg btn-block" onclick="submitNew()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m5 3 14 9-14 9z"/></svg>Recon</button>
+      <p class="muted" style="font-size:11.5px;text-align:center;margin-top:12px">Snapshots the source, profiles it, and maps the whole codebase. Recon only — never assesses security.</p>
+    </div></div></div>`; }
+  window.submitNew=async()=>{ const sourceRoot=$('repopath').value.trim(); if(!sourceRoot)return; $('newerr').textContent='creating…';
+    const r=await api('/projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sourceRoot})});
+    if(r.error){$('newerr').textContent=r.error;return;} cur=r.project; await loadProjects(); startRecon(); };
+
+  // ── RECON (live progress) ───────────────────────────────────────────────
+  const PHASES=[['freeze','Freeze snapshot'],['profile','Profile scale & shape'],['inventories','Extract inventories'],['planning','Lead + teammate planning'],['graph','Build canonical graph'],['render','Generate + validate maps'],['seal','Seal + publish'],['ready','Brain ready']];
+  let scan={nodes:[],edges:[],events:[],phase:'start',cov:0,mapped:0,planned:0,done:false,summary:null,mission:null,lead:null,workers:{}};
+  const FAMS={project:{c:'--node-1',r:22},domain:{c:'--node-2',r:15},feature:{c:'--color-accent',r:9}};
+  function startRecon(){ if(!cur)return; mode='recon'; view='brain';
+    scan={nodes:[{id:'p',label:cur.name,fam:'project',on:true}],edges:[],events:[],phase:'start',cov:0,mapped:0,planned:0,done:false,summary:null,lead:null,workers:{}};
+    render();
+    api('/projects/'+encodeURIComponent(cur.id)+'/recon',{method:'POST'});
+    openStream();
+  }
+  function resumeRecon(){ if(!cur)return; mode='recon'; view='brain';
+    scan={nodes:[{id:'p',label:cur.name,fam:'project',on:true}],edges:[],events:[],phase:(cur.runtime&&cur.runtime.phase)||'planning',cov:(cur.runtime&&cur.runtime.progress)||0,mapped:(cur.runtime&&cur.runtime.mapped_features)||0,planned:(cur.runtime&&cur.runtime.planned_features)||0,done:false,summary:null,mission:cur.active_mission||null,lead:'active',workers:{}};
+    render(); openStream();
+  }
+  function openStream(){ if(es)es.close(); es=new EventSource('/api/projects/'+encodeURIComponent(cur.id)+'/events'); es.onmessage=m=>onEvent(JSON.parse(m.data)); }
+  function onEvent(d){
+    scan.events.unshift(d); if(scan.events.length>40)scan.events.pop();
+    if(d.mission) scan.mission=d.mission;
+    if(d.kind==='lead_started')scan.lead=d.session_id||'active';
+    if(d.kind==='worker_roster')(d.workers||[]).forEach(w=>scan.workers[w]='available');
+    if(d.kind==='worker_started')scan.workers[d.worker]='running';
+    if(d.kind==='worker_completed')scan.workers[d.worker]='completed';
+    if(d.phase && d.phase!=='done') scan.phase=d.phase;   // 'done' isn't a display phase (server emits it before 'ready')
+    if(d.kind==='features_planned'||d.kind==='semantic_plan'){ scan.planned=d.count||d.planned_features||scan.planned; (d.domains||[]).forEach(dm=>{ if(!scan.nodes.find(n=>n.id==='d_'+dm)){ scan.nodes.push({id:'d_'+dm,label:dm,fam:'domain',on:true}); scan.edges.push(['p','d_'+dm]); } }); }
+    if(d.kind==='feature_mapped'){ const id='f_'+d.slug+'_'+d.domain; if(!scan.nodes.find(n=>n.id===id)){ scan.nodes.push({id,label:d.feature,fam:'feature',on:true,status:d.rows>0?'mapped':'gap'}); scan.edges.push(['d_'+d.domain,id]); } scan.mapped=d.mapped_features||scan.mapped+1; }
+    if(Number.isFinite(d.progress)) scan.cov=d.progress;
+    if(d.phase==='ready'){ scan.done=true; scan.cov=100; scan.summary=d.summary; if(es){es.close();es=null;}
+      if(mode==='recon'){ render(); return; }   // rebuild the recon view so the gate shows the scan id + real stats
+    }
+    if(mode==='recon'){ drawScan(); pside();
+      const hp=$('hudpct'); if(hp)hp.textContent=scan.cov+'%';
+      const hm=$('hudmission'); if(hm)hm.textContent=scan.mission?'scan '+scan.mission:'';   // live mission id in the HUD
+    }
+  }
+  function reconView(){ return `<div class="recon"><div class="reconmain"><div class="reconhud"><div class="lbl muted">Building the brain · ${esc(cur.name)}</div><div class="big" id="hudpct">${scan.cov}%</div><div class="cite" id="hudmission" style="margin-top:4px">${scan.mission?'scan '+esc(scan.mission):''}</div>${scan.done?'':`<button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="cancelRecon()">Cancel</button>`}</div><svg id="scan"></svg>
+    <div class="gate ${scan.done?'on':''}" id="gate"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5" style="margin-bottom:8px"><path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>
+      <h2 style="font-size:26px">${scan.summary&&scan.summary.reused?'Re-verified · source unchanged':'Brain published'}</h2><p class="muted" style="font-size:14px;margin:8px 0 6px">${esc(cur.name)} · ${scan.summary?scan.summary.features:'—'} features · ${scan.summary?scan.summary.graph.nodes:'—'} nodes · ${scan.summary?scan.summary.graph.edges:'—'} edges</p>
+      <div style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px"><span class="tag tag-accent-2">${esc(scan.summary?scan.summary.gate:'')}</span><span class="tag tag-neutral">${scan.summary?scan.summary.graph.claims:0} claims</span></div>
+      <div class="cite" style="margin-bottom:16px">scan id · ${esc(scan.mission||'')}</div>
+      <div style="display:flex;gap:10px;justify-content:center"><button class="btn btn-primary btn-lg" onclick="openBrain()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="1.6"/><circle cx="19" cy="6" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="19" cy="18" r="1.6"/></svg>Open brain</button><button class="btn btn-secondary btn-lg" onclick="goHome()">All projects</button></div></div>
+    </div><aside class="reconside" id="side"></aside></div>`; }
+  function drawScan(){ const svg=$('scan'); if(!svg)return; const {W,H}=dims(svg),cx=W/2,cy=H/2,p=scan.nodes[0]; p.x=cx;p.y=cy;
+    const doms=scan.nodes.filter(n=>n.fam==='domain'); const R1=Math.min(W,H)*0.20,R2=Math.min(W,H)*0.37;
+    doms.forEach((d,i)=>{const a=-Math.PI/2+i/Math.max(1,doms.length)*Math.PI*2;d.x=cx+Math.cos(a)*R1;d.y=cy+Math.sin(a)*R1;d._a=a;});
+    const by={}; scan.nodes.filter(n=>n.fam==='feature').forEach(f=>{const dm=scan.edges.find(e=>e[1]===f.id);(by[dm?dm[0]:'p']=by[dm?dm[0]:'p']||[]).push(f);});
+    doms.forEach(d=>{const fs=by[d.id]||[];fs.forEach((f,j)=>{const a=d._a+(fs.length>1?(j/(fs.length-1)-0.5)*0.7:0),rr=R2+(j%2?18:-4);f.x=cx+Math.cos(a)*rr;f.y=cy+Math.sin(a)*rr;});});
+    svg.innerHTML=''; const st=document.createElementNS(NS,'style'); st.textContent='@keyframes spin{to{stroke-dashoffset:-24}}@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}'; svg.appendChild(st);
+    const g=document.createElementNS(NS,'g'); svg.appendChild(g);
+    scan.edges.forEach(([a,b])=>{const na=scan.nodes.find(n=>n.id===a),nb=scan.nodes.find(n=>n.id===b);if(!na||!nb||!na.on||!nb.on)return;const mx=(na.x+nb.x)/2,my=(na.y+nb.y)/2,dx=nb.x-na.x,dy=nb.y-na.y,pth=document.createElementNS(NS,'path');pth.setAttribute('d',`M${na.x} ${na.y} Q${mx-dy*0.12} ${my+dx*0.12} ${nb.x} ${nb.y}`);pth.setAttribute('fill','none');pth.setAttribute('stroke',C('--color-accent'));pth.setAttribute('stroke-width','1');pth.setAttribute('opacity','.5');g.appendChild(pth);});
+    scan.nodes.forEach(n=>{if(!n.on)return;const f=FAMS[n.fam],gg=document.createElementNS(NS,'g');gg.setAttribute('transform',`translate(${n.x} ${n.y})`);gg.style.transformOrigin=`${n.x}px ${n.y}px`;gg.style.animation='pop .35s ease';const c=document.createElementNS(NS,'circle');c.setAttribute('r',f.r);c.setAttribute('fill',C(f.c));if(n.status==='mapped'){c.setAttribute('stroke',C('--ok'));c.setAttribute('stroke-width','2');}else if(n.status==='gap'){c.setAttribute('stroke',C('--gap'));c.setAttribute('stroke-width','2');c.setAttribute('stroke-dasharray','4 4');}gg.appendChild(c);if(n.fam!=='feature'||n.status){const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',f.r+13);t.setAttribute('font-size',n.fam==='project'?14:n.fam==='domain'?12:10);t.setAttribute('opacity','.9');t.textContent=n.label;gg.appendChild(t);}g.appendChild(gg);});
+  }
+  function pside(){ const el=$('side'); if(!el)return; const pi=PHASES.findIndex(p=>p[0]===scan.phase);
+    const workers=Object.entries(scan.workers);
+    el.innerHTML=`<div><div class="lead"><span class="leaddot"></span><b style="font-family:var(--font-heading);font-size:16px">Lead session</b><span class="tag tag-accent" style="margin-left:auto">${scan.done?'sealed':scan.lead?'active':'planning'}</span></div><p class="muted" style="font-size:12px;margin-top:6px">${scan.lead?`session ${esc(String(scan.lead).slice(0,18))}`:AI?'Claude Agent SDK · waiting for session':'Deterministic semantic fallback'} · ${scan.planned||0} features</p></div>
+      ${workers.length?`<div><div class="h4lbl">Recon teammates</div><div style="display:flex;gap:6px;flex-wrap:wrap">${workers.map(([w,s])=>`<span class="worker"><span class="wk-dot" style="background:${s==='completed'?'var(--ok)':s==='running'?'var(--active)':'var(--color-divider)'}"></span>${esc(w)} · ${esc(s)}</span>`).join('')}</div></div>`:''}
+      <div><div class="h4lbl">Recon phases</div>${PHASES.map((p,i)=>`<div class="phase ${scan.done||i<pi?'done':i===pi?'now':''}"><span class="n">${scan.done||i<pi?'✓':i+1}</span>${p[1]}</div>`).join('')}</div>
+      <div><div class="h4lbl">Coverage</div><div class="bigbar"><i style="width:${scan.cov}%"></i></div><div style="display:flex;justify-content:space-between;font-size:12px;margin-top:6px"><span class="muted">${scan.mapped}/${scan.planned||'?'} features mapped</span><b class="nums">${scan.cov}%</b></div></div>
+      <div style="flex:1;min-height:0"><div class="h4lbl">Everything happening</div><div style="overflow:auto">${scan.events.map(e=>`<div class="tick ${e.kind==='feature_mapped'&&e.rows===0?'gap':e.phase==='ready'||e.kind==='sealed'?'ok':''}"><span class="mono">${esc(e.t||'')}</span> ${esc(e.label||e.phase||'')}</div>`).join('')||'<span class="muted cite">waiting for events…</span>'}</div></div>`;
+  }
+
+  // ── PROJECT SHELL ───────────────────────────────────────────────────────
+  const ic={brain:'<circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="1.6"/><circle cx="19" cy="6" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="19" cy="18" r="1.6"/><path d="m9.7 10.4-3-3M14.3 10.4l3-3M9.7 13.6l-3 3M14.3 13.6l3 3"/>',features:'<rect x="3" y="4" width="18" height="4" rx="1.5"/><rect x="3" y="10" width="18" height="4" rx="1.5"/><rect x="3" y="16" width="18" height="4" rx="1.5"/>',architecture:'<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="9" y="14" width="6" height="6" rx="1.5"/><path d="M7 10v2h10v-2M12 12v2"/>',identity:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',interfaces:'<path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/>',dataflows:'<path d="M3 6h5l2 3h11"/><path d="M3 6v12h18V9"/><path d="m14 13 3 3-3 3"/>',coverage:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/>',activity:'<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/>',exports:'<path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/>'};
+  function navList(){ const iv=PD?PD.inventory:null,D=PD&&PD.dashboard; const interfaceTotal=iv?['ENDPOINT','ROUTE','GRAPHQL_OPERATION','JOB'].reduce((n,k)=>n+(iv.totals[k]||0),0):''; return [['brain','Brain',''],['features','Features',D?D.features.length:''],['architecture','Architecture',''],['identity','Identity',D?D.identity.roles.length:''],['interfaces','Interfaces',interfaceTotal],['dataflows','Data Flows',''],['coverage','Coverage',PD?PD.cov+'%':''],['activity','Activity',''],['exports','Exports','']]; }
+  function projectShell(){
+    const rail=`<nav class="rail">${navList().map(([k,l,c])=>`<div class="navitem" ${k===view?'aria-current="page"':''} onclick="setView('${k}')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75">${ic[k]}</svg><span>${l}</span>${c!==''?`<span class="cnt nums">${c}</span>`:''}</div>`).join('')}<div style="margin-top:auto;padding:12px"><div class="tag tag-accent-2" style="width:100%;justify-content:center">Recon only</div></div></nav>`;
+    const g=PD?PD.brain.counts:{nodes:0,edges:0,claims:0};
+    const pub=PD&&PD.publication;
+    const strip=`<footer class="strip"><div class="seg2" title="${pub?esc(pub.mission_id):''}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.75"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg><b style="font-family:var(--font-heading)">Lead</b><span class="muted">${pub&&pub.planner==='claude-agent-sdk'?'Claude planning':'deterministic planning'}</span></div><div class="sep"></div><div class="seg2"><span class="muted">Workstreams</span><span class="tag tag-accent">${pub?pub.workstreams||0:0} sealed</span></div><div class="sep"></div><div class="seg2"><span class="muted">Coverage</span><span class="bar"><i style="width:${PD?PD.cov:0}%"></i></span><b class="nums">${PD?PD.cov:0}%</b></div><div class="sep"></div><div class="seg2 ticker"><span class="ev"><span class="mono" style="color:var(--color-accent)">${pub&&pub.sealed_at?esc(pub.sealed_at.slice(11,19)):'—'}</span> <span class="muted">Brain sealed · ${PD&&PD.dashboard?PD.dashboard.features.length:0} features · ${PD?['ENDPOINT','ROUTE','GRAPHQL_OPERATION','JOB'].reduce((n,k)=>n+(PD.inventory.totals[k]||0),0):0} interfaces · ${g.claims} cited claims</span></span></div></footer>`;
+    let inner = view==='brain'?brainView() : (view==='features'&&featOpen)?featureDetailView() : `<div>${(VIEWS[view]||VIEWS.features)()}</div>`;
+    return `<div class="pbody">${rail}<main class="main">${inner}</main>${strip}</div>`;
+  }
+
+  // ── VIEWS (data-driven) ─────────────────────────────────────────────────
+  window.filterTable=(id,q,kind='')=>{const needle=String(q||'').toLowerCase();document.querySelectorAll('#'+id+' tbody tr').forEach(r=>{const text=r.textContent.toLowerCase(),rk=r.dataset.kind||'';r.style.display=(!needle||text.includes(needle))&&(!kind||rk===kind)?'':'none';});};
+  window.filterFeatures=(domain)=>{document.querySelectorAll('#featuretable tbody tr').forEach(r=>r.style.display=!domain||r.dataset.domain===domain?'':'none');document.querySelectorAll('[data-domain-filter]').forEach(b=>b.classList.toggle('on',(b.dataset.domainFilter||'')===domain));};
+  const VIEWS={
+    features:()=>{ const D=PD.dashboard, F=D.features, doms=[...new Set(F.map(f=>f.domain))];
+      return `<div class="vhead"><h1>Features</h1><span class="muted">Every capability the codebase exposes — from routes, controllers, GraphQL, jobs and services, traced to source.</span></div><div class="vbody">
+      <div class="stats">${stat(F.length,'discovered')}${stat(F.filter(f=>f.coverage==='mapped').length,'mapped')}${stat(doms.length,'domains')}${stat(F.filter(f=>f.coverage!=='mapped').length,'coverage gaps')}</div>
+      <div class="filterbar"><button class="filterchip on" data-domain-filter="" onclick="filterFeatures('')">All</button>${doms.slice(0,12).map(d=>`<button class="filterchip" data-domain-filter="${esc(d)}" onclick='filterFeatures(${JSON.stringify(d)})'>${esc(d)}</button>`).join('')}<input class="input" placeholder="Filter features…" oninput="filterTable('featuretable',this.value)"></div>
+      <div class="tablewrap" id="featuretable"><table class="table"><thead><tr><th>Feature</th><th>Domain</th><th>Entry points</th><th>Roles</th><th>Coverage</th><th>Confidence</th><th>Primary source</th></tr></thead><tbody>
+      ${F.map(f=>`<tr data-domain="${esc(f.domain)}" style="cursor:pointer" onclick='openFeature(${JSON.stringify(f.slug)})'><td><b style="font-family:var(--font-heading)">${esc(f.name)}</b></td><td><span class="tag tag-neutral">${esc(f.domain)}</span></td><td class="nums">${f.entry_points}</td><td class="muted">${esc(f.roles.slice(0,3).join(', ')||'—')}</td><td>${covDot(f.rows)}</td><td><span class="prov ${f.confidence==='high'?'high':'med'}">${esc(f.confidence)}</span></td><td class="cite">${esc(f.primary_source)}${f.primary_line?':'+f.primary_line:''}</td></tr>`).join('')}
+      </tbody></table></div><p class="cite" style="margin-top:10px">Click any feature to open its complete 13-section map.</p></div>`; },
+
+    identity:()=>{ const I=PD.dashboard.identity, caps=I.capabilities;
+      return `<div class="vhead"><h1>Identity</h1><span class="muted">Who can do what — actors, authentication, roles and the observed role × capability matrix.</span></div><div class="vbody">
+      <div class="stats">${stat(I.roles.length,'roles & actors')}${stat(I.auth_kinds.length,'auth mechanisms')}${stat(I.policy_count,'policies')}${stat(I.permissions.length,'permissions')}</div>
+      <div class="grid2"><div class="scrollcard"><div class="h4lbl" style="padding:16px 16px 0">Roles & actors</div><table class="table"><thead><tr><th>Role</th><th>Source evidence</th></tr></thead><tbody>${I.roles.map(r=>`<tr><td><span class="tag tag-accent">${esc(r.name)}</span></td><td class="cite">${esc(r.source)}${r.line?':'+r.line:''}</td></tr>`).join('')||'<tr><td colspan="2" class="muted">No grounded roles found.</td></tr>'}</tbody></table></div>
+      <div class="scrollcard"><div class="h4lbl" style="padding:16px 16px 0">Permission matrix · observed role × capability</div><table class="table matrix"><thead><tr><th>Role</th>${caps.map(c=>`<th title="${esc(c.name)}">${esc(c.name.slice(0,22))}</th>`).join('')}</tr></thead><tbody>${I.matrix.map(r=>`<tr><td><b style="font-family:var(--font-heading)">${esc(r.role)}</b></td>${caps.map(c=>`<td class="${r.capabilities[c.slug]?'yes':'no'}">${r.capabilities[c.slug]?'✓':'·'}</td>`).join('')}</tr>`).join('')||'<tr><td class="muted">No role-to-feature relationships mapped.</td></tr>'}</tbody></table></div></div>
+      <p class="cite" style="margin-top:10px">A check means source evidence linked the role to an authorization check inside that capability; it does not imply every action grants that role.</p></div>`; },
+
+    interfaces:()=>{ const E=PD.dashboard.interfaces, kinds=['REST','Route','GraphQL','Job'];
+      return `<div class="vhead"><h1>Interfaces</h1><span class="muted">Every entry and exit — REST, controllers, GraphQL operations and background jobs.</span></div><div class="vbody"><div class="stats">${stat((PD.inventory.totals.ENDPOINT||0)+(PD.inventory.totals.ROUTE||0)+(PD.inventory.totals.GRAPHQL_OPERATION||0)+(PD.inventory.totals.JOB||0),'endpoints')}${kinds.map(k=>stat(E.filter(e=>e.kind===k).length,k)).join('')}</div>
+      <div class="filterbar">${['',...kinds].map((k,i)=>`<button class="filterchip ${i===0?'on':''}" onclick="document.querySelectorAll('.filterchip').forEach(x=>x.classList.remove('on'));this.classList.add('on');filterTable('iftable','', '${k}')">${k||'All'}</button>`).join('')}<input class="input" placeholder="Filter by operation or handler…" oninput="filterTable('iftable',this.value)"></div>
+      <div class="tablewrap" id="iftable"><table class="table"><thead><tr><th>Kind</th><th>Method</th><th>Path / operation</th><th>Handler</th><th>Feature</th></tr></thead><tbody>${E.map(e=>`<tr data-kind="${esc(e.kind)}"><td><span class="tag ${e.kind==='GraphQL'?'tag-accent-2':e.kind==='REST'?'tag-accent':'tag-neutral'}">${esc(e.kind)}</span></td><td class="mono">${esc(e.method)}</td><td class="mono">${esc(e.operation)}</td><td class="cite">${esc(e.handler)}${e.line?':'+e.line:''}</td><td>${esc(e.feature||'—')}</td></tr>`).join('')}</tbody></table></div>${PD.dashboard.projection.interfaces_truncated?'<p class="cite" style="margin-top:8px">Bounded interactive view; the export ledger remains exhaustive.</p>':''}</div>`; },
+
+    architecture:()=>{ const A=PD.dashboard.architecture; const grp=(title,arr,cls)=>`<div class="card"><div class="h4lbl">${title}</div>${arr.slice(0,40).map(x=>`<div class="rel"><span class="tag ${cls}">${esc(x.name||x.domain)}</span><span class="spacer"></span><span class="nums muted">${x.features!=null?x.features+' features':esc(x.data&&x.data.kind||'')}</span></div>`).join('')||'<p class="muted">none detected</p>'}</div>`;
+      return `<div class="vhead"><h1>Architecture</h1><span class="muted">The system’s domains, runtime processes, stores and external dependencies.</span></div><div class="vbody"><div class="stats">${stat(A.domains.length,'domains')}${stat(A.processes.length,'processes')}${stat(A.data_stores.length,'data stores')}${stat(A.integrations.length,'integrations')}</div><div class="grid3">${grp('Business domains',A.domains,'tag-accent')}${grp('Processes & runtimes',A.processes,'tag-neutral')}${grp('Data stores',A.data_stores,'tag-accent-2')}</div><div style="margin-top:var(--space-3)">${grp('External integrations',A.integrations,'tag-outline')}</div></div>`; },
+
+    dataflows:()=>{ const D=PD.dashboard.data_flows;
+      return `<div class="vhead"><h1>Data Flows</h1><span class="muted">Where data moves — source → sink — and which trust boundary each flow crosses.</span></div><div class="vbody"><div class="splitview"><div class="scrollcard"><div class="h4lbl" style="padding:16px 16px 0">Flows</div><table class="table"><thead><tr><th>Flow</th><th>Source → sink</th><th>Boundary</th><th>Evidence</th></tr></thead><tbody>${D.flows.map(f=>`<tr><td><b style="font-family:var(--font-heading)">${esc(f.feature)}</b><div class="cite">${esc(f.name)}</div></td><td>${esc(f.source)} → ${esc(f.sink)}</td><td><span class="tag ${f.boundary==='Internal'?'tag-neutral':'tag-accent'}">${esc(f.boundary)}</span></td><td class="cite">${f.line?'line '+f.line:'mapped'}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">No source-grounded flows mapped.</td></tr>'}</tbody></table></div><div class="card"><div class="h4lbl">Trust boundaries · outermost → innermost</div>${D.boundaries.map((b,i)=>`<div class="boundary"><span class="tag tag-neutral">L${i+1}</span><span>${esc(b.name)}</span><span class="spacer"></span><span class="prov ${b.confidence==='high'?'high':'med'}">${esc(b.confidence)}</span></div>`).join('')||'<p class="muted">No explicit boundaries mapped.</p>'}</div></div></div>`; },
+
+    coverage:()=>{ const C=PD.dashboard.coverage, kinds=C.kinds.slice(0,10), mapped=C.reconciliation.MAPPED_TO_FEATURE||0, total=Object.values(C.reconciliation).reduce((a,b)=>a+b,0), pct=total?Math.round(mapped/total*100):0;
+      return `<div class="vhead"><h1>Coverage</h1><span class="muted">Reconciliation of every inventory item against features — nothing disappears silently.</span></div><div class="vbody"><div class="stats">${stat(pct+'%','mapped')}${stat(total,'inventory rows')}${stat(kinds.length,'inventories')}${stat(C.rows.filter(r=>!r.total).length,'coverage gaps')}</div><div class="scrollcard" style="padding:14px"><div class="heatmap" style="--heat-cols:${kinds.length}"><div></div>${kinds.map(k=>`<div class="hh">${esc(k.replace(/_/g,' '))}</div>`).join('')}${C.rows.map(r=>`<div class="hn" title="${esc(r.name)}">${esc(r.name)}</div>${kinds.map(k=>`<div class="cell ${r.kinds[k]?'on':''}" title="${esc(r.name)} · ${esc(k)} · ${r.kinds[k]||0}">${r.kinds[k]||''}</div>`).join('')}`).join('')}</div></div>
+      <div class="card" style="margin-top:var(--space-3);display:flex;align-items:center;gap:14px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg><div><b style="font-family:var(--font-heading)">Completion gate — ${esc(PD.publication&&PD.publication.gate||'COMPLETE')}</b><div class="cite">${mapped} mapped rows · ${total-mapped} explicitly classified outside features · Markdown ↔ graph reconciliation sealed.</div></div></div></div>`; },
+
+    activity:()=>{ const pub=PD.publication||{};
+      return `<div class="vhead"><h1>Activity</h1><span class="muted">The recon mission — every phase and event, from backend task state.</span></div><div class="vbody"><div class="grid2" style="align-items:start"><div class="card"><div class="h4lbl">Mission timeline</div><div class="tl" id="acttl"><span class="muted cite">loading…</span></div></div><div class="card"><div class="h4lbl">Recon mission</div>${[['Scan id',pub.mission_id||'—'],['Sealed',pub.sealed_at?pub.sealed_at.slice(0,19).replace('T',' '):'—'],['Gate',pub.gate||'—'],['Mode',AI?'Claude Agent SDK':'Deterministic'],['Snapshot',cur.snapshot?cur.snapshot.replace('snapshot:','').slice(0,16):'—'],['Features',PD.features.length],['Graph',PD.brain.counts.nodes+' nodes · '+PD.brain.counts.claims+' claims']].map(([k,v])=>`<div class="rel" style="justify-content:space-between;border-bottom:1px solid color-mix(in srgb,var(--color-text) 7%,transparent)"><span class="muted">${k}</span><b class="${k==='Scan id'?'mono':''}" style="font-family:${k==='Scan id'?'var(--font-mono)':'var(--font-heading)'};font-weight:400;font-size:${k==='Scan id'?'11px':'inherit'}">${esc(String(v))}</b></div>`).join('')}${(pub.gaps||[]).length?`<div class="h4lbl" style="margin-top:12px;color:var(--gap)">Gaps</div>${pub.gaps.map(g=>`<div class="cite" style="color:var(--gap)">${esc(g)}</div>`).join('')}`:''}<button class="btn btn-secondary btn-block" style="width:100%;margin-top:14px" onclick="startRecon()">Re-run recon</button></div></div></div>`; },
+
+    exports:()=>`<div class="vhead"><h1>Exports</h1><span class="muted">Hand the brain to another AI session — portable, self-describing, understood without this UI.</span></div><div class="vbody"><div class="exportgrid"><div class="card exportcard"><div class="h4lbl">Export mode</div><h2>Full</h2><p class="muted">Portable brain plus canonical SQLite, mission, snapshot metadata, source manifest and the complete frozen source tree.</p><div class="cite">Exact restorable snapshot · largest download</div><button class="btn btn-secondary btn-block" onclick="exportInfo('full')">Export Full</button></div><div class="card exportcard"><div class="h4lbl" style="color:var(--color-accent)">Recommended</div><h2>Portable</h2><p class="muted">All feature maps, exhaustive JSONL ledgers, inventories, complete graph and <code class="mono">AI_CONTEXT.md</code>. Raw source is excluded.</p><div class="cite">124 feature maps · 124 exhaustive ledgers</div><button class="btn btn-primary btn-block" onclick="exportInfo('portable')">Export Portable</button></div><div class="card exportcard"><div class="h4lbl">Export mode</div><h2>Feature context</h2><p class="muted">One feature and its grounded neighbourhood for a focused task.</p><div class="cite">Select from Features</div><button class="btn btn-secondary btn-block" onclick="setView('features')">Choose feature</button></div></div><div class="card" style="margin-top:var(--space-3);display:flex;align-items:center;gap:12px"><span style="color:var(--ok);font-size:20px">✓</span><span>Markdown is bounded for people; <code class="mono">ledgers/*.jsonl</code> and <code class="mono">graph/*.jsonl</code> contain the exhaustive mapping.</span></div></div>`,
+  };
+  window.exportInfo=(mode)=>{ if(!cur)return; location.href='/api/projects/'+encodeURIComponent(cur.id)+'/export/'+(mode==='full'?'full':'portable'); };
+  window.exportFeature=(slug)=>{ if(!cur||!slug)return; location.href='/api/projects/'+encodeURIComponent(cur.id)+'/features/'+encodeURIComponent(slug)+'/export'; };
+
+  // ── BRAIN ───────────────────────────────────────────────────────────────
+  const FAM={project:{c:'--node-1',r:22},domain:{c:'--node-2',r:16},feature:{c:'--color-accent',r:11}};
+  let gsel=null,ghov=null,gcam={x:0,y:0,z:1},gdrag=null;
+  function brainNodes(){ const b=PD.brain; const nodes=b.nodes.map(n=>({id:n.id,label:n.name||idName(n.id),fam:n.type.toLowerCase(),type:n.type,data:n.data,status:n.type==='FEATURE'?(n.data&&n.data.row_count>0?'mapped':'gap'):null})); const edges=b.edges.map(e=>[e.from,e.to,e.type]); return {nodes,edges}; }
+  const neigh=(edges,id)=>{const s=new Set([id]);edges.forEach(([a,b])=>{if(a===id)s.add(b);if(b===id)s.add(a);});return s;};
+  function drawBrain(){ const svg=$('net'); if(!svg||!PD)return; const {nodes,edges}=brainNodes(); const {W,H}=dims(svg),cx=Math.max(220,(W-310)/2),cy=H/2;
+    const proj=nodes.find(n=>n.fam==='project'); if(proj){proj.x=cx;proj.y=cy;} const doms=nodes.filter(n=>n.fam==='domain');
+    const by={}; nodes.filter(n=>n.fam==='feature').forEach(f=>{const e=edges.find(x=>x[1]===f.id&&x[2]==='CONTAINS');(by[e?e[0]:'x']=by[e?e[0]:'x']||[]).push(f);});
+    const total=Math.max(1,nodes.filter(n=>n.fam==='feature').length),R1=Math.min(W-320,H)*.18,R2=Math.min(W-320,H)*.34;
+    let cursor=-Math.PI/2; doms.forEach(d=>{const fs=(by[d.id]||[]).sort((a,b)=>a.label.localeCompare(b.label)),span=Math.max(.28,Math.PI*2*(Math.max(1,fs.length)/total)),mid=cursor+span/2;d.x=cx+Math.cos(mid)*R1;d.y=cy+Math.sin(mid)*R1;d._a=mid;
+      const perRing=Math.max(1,Math.floor((span*R2)/30));fs.forEach((f,j)=>{const ring=Math.floor(j/perRing),slot=j%perRing,onRing=Math.min(perRing,fs.length-ring*perRing),a=cursor+span*((slot+.5)/Math.max(1,onRing)),rr=R2+ring*34;f.x=cx+Math.cos(a)*rr;f.y=cy+Math.sin(a)*rr;});cursor+=span;});
+    if(!gsel){const f0=nodes.find(n=>n.fam==='feature');gsel=f0?f0.id:(proj?proj.id:null);if(gsel)binsp(nodes.find(n=>n.id===gsel));}
+    svg.innerHTML=''; const st=document.createElementNS(NS,'style'); st.textContent='@keyframes spin{to{stroke-dashoffset:-24}}'; svg.appendChild(st);
+    const g=document.createElementNS(NS,'g');g.setAttribute('transform',`translate(${gcam.x} ${gcam.y}) scale(${gcam.z})`);svg.appendChild(g); const hl=ghov?neigh(edges,ghov):(gsel?neigh(edges,gsel):null);
+    edges.forEach(([a,b,t])=>{const na=nodes.find(n=>n.id===a),nb=nodes.find(n=>n.id===b);if(!na||!nb||na.x==null||nb.x==null)return;const mx=(na.x+nb.x)/2,my=(na.y+nb.y)/2,dx=nb.x-na.x,dy=nb.y-na.y,p=document.createElementNS(NS,'path');p.setAttribute('d',`M${na.x} ${na.y} Q${mx-dy*0.12} ${my+dx*0.12} ${nb.x} ${nb.y}`);const on=hl?(hl.has(a)&&hl.has(b)):true;p.setAttribute('fill','none');p.setAttribute('stroke',t==='SHARES_IMPLEMENTATION_WITH'?C('--color-accent-2'):(on?C('--color-accent'):'color-mix(in srgb,var(--color-text) 14%,transparent)'));p.setAttribute('stroke-width',t==='SHARES_IMPLEMENTATION_WITH'?1.4:(on&&hl?1.6:1));p.setAttribute('stroke-dasharray',t==='SHARES_IMPLEMENTATION_WITH'?'4 3':'');p.setAttribute('opacity',hl&&!on?0.25:0.6);g.appendChild(p);});
+    nodes.forEach(n=>{if(n.x==null)return;const f=FAM[n.fam]||{c:'--color-neutral-600',r:8},gg=document.createElementNS(NS,'g');gg.setAttribute('class','node');gg.setAttribute('transform',`translate(${n.x} ${n.y})`);const dim=hl&&!hl.has(n.id);const c=document.createElementNS(NS,'circle');c.setAttribute('r',f.r);c.setAttribute('fill',C(f.c));c.setAttribute('opacity',dim?0.3:1);if(n.status==='mapped'){c.setAttribute('stroke',C('--ok'));c.setAttribute('stroke-width','2');}else if(n.status==='gap'){c.setAttribute('stroke',C('--gap'));c.setAttribute('stroke-width','2');c.setAttribute('stroke-dasharray','4 4');}if(n.id===gsel){c.setAttribute('stroke',C('--color-accent'));c.setAttribute('stroke-width','3');}gg.appendChild(c);if(n.fam!=='feature'||n.id===gsel||n.id===ghov||gcam.z>1.35){const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',f.r+(n.fam==='project'?18:14));t.setAttribute('font-size',n.fam==='project'?15:n.fam==='domain'?12:10.5);t.setAttribute('opacity',dim?0.4:0.9);t.textContent=n.label;t.setAttribute('paint-order','stroke');t.setAttribute('stroke',C('--color-bg'));t.setAttribute('stroke-width','3');gg.appendChild(t);}gg.onmouseenter=e=>{ghov=n.id;const tt=$('tt'),b=svg.getBoundingClientRect();if(tt){tt.style.left=(e.clientX-b.left)+'px';tt.style.top=(e.clientY-b.top)+'px';tt.textContent=n.label+(n.status?' · '+n.status:'');tt.style.opacity=1;}drawBrain();};gg.onmouseleave=()=>{ghov=null;const tt=$('tt');if(tt)tt.style.opacity=0;drawBrain();};gg.onclick=e=>{e.stopPropagation();gsel=n.id;binsp(n);drawBrain();};g.appendChild(gg);});
+    svg.onwheel=e=>{e.preventDefault();const old=gcam.z,next=Math.max(.35,Math.min(3,old*Math.exp(-e.deltaY*.001))),b=svg.getBoundingClientRect(),px=e.clientX-b.left,py=e.clientY-b.top;gcam.x=px-(px-gcam.x)*(next/old);gcam.y=py-(py-gcam.y)*(next/old);gcam.z=next;drawBrain();};
+    svg.onpointerdown=e=>{if(e.target.closest&&e.target.closest('.node'))return;gdrag={x:e.clientX,y:e.clientY,ox:gcam.x,oy:gcam.y};svg.classList.add('dragging');svg.setPointerCapture(e.pointerId);};
+    svg.onpointermove=e=>{if(!gdrag)return;gcam.x=gdrag.ox+e.clientX-gdrag.x;gcam.y=gdrag.oy+e.clientY-gdrag.y;drawBrain();};
+    svg.onpointerup=()=>{gdrag=null;svg.classList.remove('dragging');};
+  }
+  function binsp(n){ const el=$('binsp'); if(!el||!n)return; const isF=n.fam==='feature';
+    el.innerHTML=`<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">${isF?'Feature · '+(n.data&&n.data.domain||''):n.fam==='domain'?'Domain':'Project'}</div><h3 style="font-size:22px;margin:5px 0">${esc(n.label)}</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${n.status?`<span class="tag ${n.status==='gap'?'tag-neutral':'tag-accent'}">${n.status==='gap'?'coverage gap':n.status}</span>`:''}</div>
+      ${isF?`<div class="h4lbl" style="margin-top:12px">Facts</div><div style="font-size:13px"><div class="rel" style="padding:3px 0"><span class="muted" style="min-width:90px">Rows</span>${n.data&&n.data.row_count||0}</div><div class="rel" style="padding:3px 0"><span class="muted" style="min-width:90px">Domain</span>${esc(n.data&&n.data.domain||'')}</div></div><p class="muted" style="font-size:12.5px;margin-top:8px">${esc((n.data&&n.data.purpose||'').slice(0,140))}</p><button class="btn btn-primary btn-block" style="width:100%;margin-top:12px" onclick='openFeature(${JSON.stringify(n.data&&n.data.slug)})'>Open feature map →</button>`:`<p class="muted" style="font-size:13px">Click a feature node to inspect it.</p>`}`;
+  }
+  window.brainZoom=d=>{gcam.z=Math.max(.35,Math.min(3,gcam.z*d));drawBrain();};window.brainFit=()=>{gcam={x:0,y:0,z:1};drawBrain();};
+  function brainView(){ return `<div class="brain"><svg id="net"></svg><div class="graphctl"><button class="btn btn-icon" title="Zoom in" onclick="brainZoom(1.25)">+</button><button class="btn btn-icon" title="Zoom out" onclick="brainZoom(.8)">−</button><button class="btn btn-sm" title="Fit graph" onclick="brainFit()">Fit</button></div><div class="legend"><div class="row"><span class="sw" style="background:var(--node-1)"></span>Project / domain</div><div class="row"><span class="sw" style="background:var(--color-accent)"></span>Feature</div><div class="row"><span class="sw" style="border:2px dashed var(--gap);width:9px;height:9px"></span>Coverage gap</div><div class="row"><span class="sw" style="width:14px;border-top:2px dashed var(--color-accent-2)"></span>Shares implementation</div></div><div class="binsp" id="binsp"></div><div class="tt" id="tt"></div></div>`; }
+
+  // ── FEATURE DETAIL (13 sections) ────────────────────────────────────────
+  let featOpen=null, featData=null;
+  window.openFeature=async(slug)=>{ if(!slug)return; featOpen=slug; view='features'; featData=null; render();
+    featData=await api('/projects/'+encodeURIComponent(cur.id)+'/features/'+encodeURIComponent(slug)); render(); };
+  window.closeFeature=()=>{featOpen=null;featData=null;render();};
+  const mdInline=s=>esc(s).replace(/`([^`]+)`/g,'<code class="mono">$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  const mdCells=row=>{const s=row.replace(/^\||\|$/g,''),out=[];let cell='';for(let i=0;i<s.length;i++){if(s[i]==='\\'&&s[i+1]==='|'){cell+='|';i++;}else if(s[i]==='|'){out.push(cell.trim());cell='';}else cell+=s[i];}out.push(cell.trim());return out;};
+  function mdBlock(lines){ let out='',i=0;
+    while(i<lines.length){ const line=lines[i];
+      if(!line.trim()){i++;continue;}
+      if(/^###\s+/.test(line)){out+=`<h3>${mdInline(line.replace(/^###\s+/,''))}</h3>`;i++;continue;}
+      if(/^\|/.test(line)&&i+1<lines.length&&/^\|?\s*:?-+/.test(lines[i+1])){ const table=[];while(i<lines.length&&/^\|/.test(lines[i]))table.push(lines[i++]);
+        const head=mdCells(table[0]),rows=table.slice(2).map(mdCells);
+        out+=`<div class="doc-tablewrap"><table class="table"><thead><tr>${head.map(v=>`<th>${mdInline(v)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${head.map((_,j)=>`<td>${mdInline(r[j]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;continue;}
+      if(/^[-*]\s+/.test(line)){const items=[];while(i<lines.length&&/^[-*]\s+/.test(lines[i]))items.push(lines[i++].replace(/^[-*]\s+/,''));out+=`<ul>${items.map(x=>`<li>${mdInline(x)}</li>`).join('')}</ul>`;continue;}
+      if(/^\d+\.\s+/.test(line)){const items=[];while(i<lines.length&&/^\d+\.\s+/.test(lines[i]))items.push(lines[i++].replace(/^\d+\.\s+/,''));out+=`<ol>${items.map(x=>`<li>${mdInline(x)}</li>`).join('')}</ol>`;continue;}
+      const para=[];while(i<lines.length&&lines[i].trim()&&!/^###\s+|^\||^[-*]\s+|^\d+\.\s+/.test(lines[i]))para.push(lines[i++]);out+=`<p>${mdInline(para.join(' '))}</p>`;
+    } return out;
+  }
+  function renderFeatureDocument(md){ const lines=String(md||'').split(/\r?\n/),sections=[];let title='',body=[];
+    const push=()=>{if(title)sections.push({title,body});body=[];};
+    for(const line of lines){if(/^#\s+/.test(line))continue;if(/^##\s+/.test(line)){push();title=line.replace(/^##\s+/,'');}else body.push(line);}push();
+    return sections.map(s=>`<section class="card"><div class="h4lbl">${mdInline(s.title)}</div>${mdBlock(s.body)}</section>`).join('');
+  }
+  function featureDetailView(){
+    if(!featData) return `<div class="vbody" style="padding-top:var(--space-6)"><button class="btn btn-ghost" style="color:var(--color-accent)" onclick="closeFeature()">← Features</button><p class="muted" style="margin-top:20px">loading…</p></div>`;
+    const f=featData.feature, b=featData.bundle||{neighbours:[],facts:[],citations:[]}; const N=b.neighbours||[];
+    const byT=t=>N.filter(n=>n.type===t); const cite=n=>{const c=(b.citations||[]).find(c=>c.node===n.id);return c?`<span class="cite">${esc(c.file)}:${c.line}</span>`:'';};
+    const sec=(t,body)=>`<div class="card" style="margin-bottom:var(--space-3)"><div class="h4lbl">${t}</div>${body}</div>`;
+    const listT=(ns)=>ns.length?`<table class="table"><tbody>${ns.map(n=>`<tr><td>${esc(n.name||idName(n.id))}</td><td class="cite" style="text-align:right">${esc((n.data&&n.data.file)||'')}</td></tr>`).join('')}</tbody></table>`:'<p class="muted" style="font-size:13px">none found</p>';
+    const files=(f.data.files||[]);
+    if(featData.markdown) return `<div class="vbody" style="padding-top:var(--space-4)">
+      <button class="btn btn-ghost" onclick="closeFeature()" style="color:var(--color-accent);margin-bottom:12px">← Features</button>
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:var(--space-4)"><div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Feature · ${esc(f.data.domain)}</div><h1 style="font-size:30px">${esc(f.name)}</h1><p class="muted" style="font-size:13px;margin-top:6px">Canonical 13-section feature map · every table grounded to the sealed graph and exhaustive ledger.</p></div><span class="spacer"></span>${covDot(f.data.row_count)}<button class="btn btn-secondary btn-sm" onclick='exportFeature(${JSON.stringify(f.data.slug)})'>Export context</button></div>
+      <div class="featuredoc">${renderFeatureDocument(featData.markdown)}</div></div>`;
+    return `<div class="vbody" style="padding-top:var(--space-4)">
+      <button class="btn btn-ghost" onclick="closeFeature()" style="color:var(--color-accent);margin-bottom:12px">← Features</button>
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:var(--space-4)"><div><div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Feature · ${esc(f.data.domain)}</div><h1 style="font-size:30px">${esc(f.name)}</h1><p class="muted" style="font-size:14px;max-width:72ch">${esc(f.data.purpose||'')}</p></div><span class="spacer"></span>${covDot(f.data.row_count)}<button class="btn btn-secondary btn-sm" onclick='exportFeature(${JSON.stringify(f.data.slug)})'>Export context</button></div>
+      ${sec('1 · Feature identity',`<table class="table"><tbody><tr><td class="muted">Slug</td><td class="mono">${esc(f.data.slug)}</td></tr><tr><td class="muted">Domain</td><td>${esc(f.data.domain)}</td></tr><tr><td class="muted">Mapped rows</td><td class="nums">${f.data.row_count||0}</td></tr></tbody></table>`)}
+      ${sec('2 · Feature purpose',`<p style="font-size:13.5px">${esc(f.data.purpose||'—')}</p>${b.projection&&b.projection.truncated?`<p class="cite" style="margin-top:10px">This screen is a balanced projection for responsiveness. Exact totals are preserved; every mapped row is available in <code class="mono">${esc(b.projection.exhaustive_ledger||'ledgers/&lt;feature&gt;.jsonl')}</code>.</p>`:''}`)}
+      ${sec('3 · Entry points',listT([...byT('ENDPOINT'),...byT('ROUTE'),...byT('GRAPHQL_OPERATION'),...byT('JOB')]))}
+      ${sec('4 · Endpoint / action ledger',(()=>{const eps=[...byT('ENDPOINT'),...byT('ROUTE')];return eps.length?`<table class="table"><thead><tr><th>Entry point</th><th>Source</th><th>Status</th></tr></thead><tbody>${eps.map(e=>`<tr><td>${esc(e.name||idName(e.id))}</td><td class="cite">${esc((e.data&&e.data.file)||'')}${e.data&&e.data.line?':'+e.data.line:''}</td><td><span class="cov"><span class="covdot" style="background:var(--ok)"></span>mapped</span></td></tr>`).join('')}</tbody></table>`:'<p class="muted" style="font-size:13px">no entry points</p>';})())}
+      ${sec('5 · Full code paths',`<p class="muted" style="font-size:13px">Endpoints → handling files above are the deterministic spine. Full traced paths land with AI enrichment.</p>`)}
+      ${sec('6 · Authorization map',listT(byT('AUTH_CHECK').filter(n=>n.data&&n.data.kind==='policy')))}
+      ${sec('7 · Authentication / actor context',listT(byT('AUTH_CHECK').filter(n=>!n.data||n.data.kind!=='policy')))}
+      ${sec('8 · Data exposure map',listT(byT('SERVICE').filter(n=>n.data&&n.data.kind==='serializer')))}
+      ${sec('9 · Background job map',listT(byT('JOB')))}
+      ${sec('10 · Same-functionality map',(()=>{const s=(b.facts||[]).filter(x=>/SHARES/.test(x));return s.length?s.map(x=>`<div class="mono" style="font-size:12px;padding:3px 0">${esc(x)}</div>`).join(''):'<p class="muted" style="font-size:13px">no shared implementation detected</p>';})())}
+      <div class="card" style="margin-bottom:var(--space-3);border:1px solid color-mix(in srgb,var(--gap) 40%,transparent)"><div class="h4lbl" style="color:var(--gap)">11 · Review context — unverified leads, NOT findings</div><p class="muted" style="font-size:13px">Ranked leads + open questions land with AI enrichment. Recon reports structure, never vulnerabilities.</p></div>
+      ${sec('12 · Files reviewed',files.length?`<table class="table"><tbody>${files.slice(0,160).map(x=>`<tr><td class="mono" style="font-size:12px">${esc(x)}</td></tr>`).join('')}</tbody></table>${files.length>160?`<p class="cite" style="margin-top:8px">${files.length-160} more files are preserved in the exported feature ledger.</p>`:''}`:'<p class="muted" style="font-size:13px">none</p>')}
+      ${sec('13 · Coverage notes',`<p style="font-size:13px">Depth: structure-mapped (estimated, not verified). ${(b.citations||[]).length} provenance citations.</p><p class="muted" style="font-size:11px;margin-top:6px">Estimated coverage is never labelled verified.</p>`)}
+    </div>`;
+  }
+
+  // ── navigation + data loading ───────────────────────────────────────────
+  window.stopStream=()=>{ if(es){es.close();es=null;} };
+  window.cancelRecon=async()=>{ stopStream(); if(cur){ try{ await api('/projects/'+encodeURIComponent(cur.id)+'/recon/abort',{method:'POST'}); }catch{} } goHome(); };
+  window.goHome=async()=>{ stopStream(); mode='home';cur=null;PD=null;featOpen=null;await loadProjects();render(); };
+  window.goNew=()=>{mode='new';render();};
+  window.setView=v=>{featOpen=null;featData=null;view=v;render();};
+  window.openBrain=async()=>{ mode='project'; view='brain'; gsel=null; await loadProject(); render(); if(view==='activity')loadActivity(); };
+  window.cardClick=async(id,status)=>{ cur=PROJECTS.find(p=>p.id===id); if(status==='scanning'){ resumeRecon(); } else if(status==='ready'){ await openBrain(); } else { startRecon(); } };
+  window.startRecon=startRecon;
+  async function loadProject(){ if(!cur)return; const pid=encodeURIComponent(cur.id);
+    const [brain,features,inventory,coverage,dashboard]=await Promise.all([api('/projects/'+pid+'/brain'),api('/projects/'+pid+'/features'),api('/projects/'+pid+'/inventory'),api('/projects/'+pid+'/coverage'),api('/projects/'+pid+'/dashboard')]);
+    if(brain.empty){ PD=null; return; }
+    const covPct=features.features.length?Math.round(features.features.filter(f=>f.row_count>0).length/features.features.length*100):0;
+    PD={brain,features:features.features,inventory,coverage,dashboard,cov:covPct,publication:brain.publication||null}; }
+  async function loadActivity(){ const el=$('acttl'); if(!el)return; const a=await api('/projects/'+encodeURIComponent(cur.id)+'/activity');
+    el.innerHTML=(a.events||[]).length?a.events.map(e=>`<div class="it ${e.kind==='feature_mapped'&&e.rows===0?'gap':e.phase==='ready'?'ok':''}"><div class="t nums">${esc(e.t||'')}</div><div style="font-size:13px">${esc(e.label||e.phase||'')}</div></div>`).join(''):'<span class="muted cite">No recorded events. Re-run recon to see the live mission.</span>'; }
+
+  function topMid(){ const t=$('topmid');
+    if(mode==='project'&&cur){ t.innerHTML=`<button class="switcher" id="sw"><b>${esc(cur.name)}</b><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m6 9 6 6 6-6"/></svg><div class="menu" id="pmenu">${PROJECTS.map(p=>`<div class="mi" onclick='event.stopPropagation();cardClick(${JSON.stringify(p.id)},${JSON.stringify(p.status)})'><span class="mdot" style="background:${p.status==='ready'?'var(--ok)':'var(--gap)'}"></span>${esc(p.name)}<span class="spacer"></span><span class="muted nums" style="font-size:11px">${p.features||0}</span></div>`).join('')}<div class="mi" onclick="event.stopPropagation();goHome()" style="border-top:1px solid var(--color-divider);margin-top:4px;color:var(--color-accent)">All projects…</div></div></button>
+      <span class="spacer"></span>${connChip()}<span class="recon-pill" onclick="startRecon()"><span class="rdot"></span>Re-run recon</span>`;
+      const sw=$('sw'); sw.onclick=()=>$('pmenu').classList.toggle('on'); document.addEventListener('click',e=>{if(sw&&!sw.contains(e.target))$('pmenu')&&$('pmenu').classList.remove('on');},{once:true});
+    } else { t.innerHTML=`<button class="switcher" onclick="goHome()"><b>Projects</b></button><span class="spacer"></span>${connChip()}${mode!=='home'?`<button class="btn btn-secondary btn-sm" onclick="${mode==='recon'?'cancelRecon()':'goHome()'}">Cancel</button>`:''}<button class="btn btn-primary" onclick="goNew()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 5v14M5 12h14"/></svg>New project</button>`; }
+  }
+  function render(){
+    topMid();
+    const b=$('body');
+    if(mode==='project'&&PD){ b.innerHTML=projectShell();
+      if(view==='brain'){ requestAnimationFrame(()=>{drawBrain(); const net=$('net'); if(net) new ResizeObserver(()=>{if(view==='brain'&&mode==='project')drawBrain();}).observe(net);}); }
+      if(view==='activity') loadActivity();
+    }
+    else if(mode==='project'&&!PD){ b.innerHTML=`<div class="obmain"><div class="wrap"><div class="empty"><h1 style="font-size:28px">No brain yet</h1><p class="muted" style="margin:10px 0 20px">Run recon to map ${esc(cur?cur.name:'')}.</p><button class="btn btn-primary btn-lg" onclick="startRecon()">Run recon →</button></div></div></div>`; }
+    else if(mode==='recon'){ b.innerHTML=reconView(); requestAnimationFrame(()=>{drawScan();pside();const s=$('scan');if(s)new ResizeObserver(()=>{if(mode==='recon')drawScan();}).observe(s);}); }
+    else if(mode==='new') b.innerHTML=newView();
+    else b.innerHTML=homeView();
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

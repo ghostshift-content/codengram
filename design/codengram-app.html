@@ -1,0 +1,372 @@
+<!-- Codengram — full app prototype on the "Organic" Claude Design system. Recon only: maps a codebase's
+     structure (features, interfaces, identity, data flows, coverage). Never reports vulnerabilities. -->
+<title>Codengram — App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --color-bg:#f5ead8; --color-surface:#ebddc5; --color-text:#201e1d;
+    --color-accent:#c67139; --color-accent-2:#7a8a5e; --color-divider:color-mix(in srgb,#201e1d 16%,transparent);
+    --color-neutral-100:#f9f4ed; --color-neutral-200:#eee7db; --color-neutral-300:#dcd3c4; --color-neutral-400:#c0b6a5;
+    --color-neutral-500:#a19786; --color-neutral-600:#82796a; --color-neutral-700:#645c50; --color-neutral-800:#474238; --color-neutral-900:#2e2b25;
+    --color-accent-100:#fff2eb; --color-accent-200:#ffe1d0; --color-accent-300:#ffc6a5; --color-accent-400:#f6a06b; --color-accent-500:#d67f48;
+    --color-accent-600:#b2622d; --color-accent-700:#8c491a; --color-accent-800:#643312; --color-accent-900:#402310;
+    --color-accent-2-100:#f0fae1; --color-accent-2-200:#e1eecc; --color-accent-2-300:#ccdbb2; --color-accent-2-400:#aebf92; --color-accent-2-500:#8fa073;
+    --color-accent-2-600:#728157; --color-accent-2-700:#56633f; --color-accent-2-800:#3d472b; --color-accent-2-900:#272e1b;
+    --font-heading:"Caprasimo",Georgia,serif; --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif; --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --space-1:4.4px; --space-2:8.8px; --space-3:13.2px; --space-4:17.6px; --space-6:26.4px; --space-8:35.2px;
+    --radius-sm:8px; --radius-md:16px; --radius-lg:28px;
+    --shadow-sm:0 1px 2px color-mix(in srgb,#2e2b25 14%,transparent); --shadow-md:0 3px 10px color-mix(in srgb,#2e2b25 16%,transparent); --shadow-lg:0 12px 32px color-mix(in srgb,#2e2b25 22%,transparent);
+    --ok:var(--color-accent-2-600); --active:var(--color-accent-600); --gap:#c98a2f; --stale:var(--color-neutral-500); color-scheme:light;
+  }
+  :root[data-theme="dark"]{ --color-bg:#211b15; --color-surface:#2b241c; --color-text:#f3e9d9; --color-divider:color-mix(in srgb,#f3e9d9 15%,transparent);
+    --color-accent:#e08a4c; --color-accent-2:#a8b884; --ok:var(--color-accent-2-400); --active:var(--color-accent-400); --gap:#e0a94e;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 4px 14px rgba(0,0,0,.45); --shadow-lg:0 16px 40px rgba(0,0,0,.55); color-scheme:dark; }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --color-bg:#211b15; --color-surface:#2b241c; --color-text:#f3e9d9;
+    --color-divider:color-mix(in srgb,#f3e9d9 15%,transparent); --color-accent:#e08a4c; --color-accent-2:#a8b884; --ok:var(--color-accent-2-400);
+    --active:var(--color-accent-400); --gap:#e0a94e; --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 4px 14px rgba(0,0,0,.45); --shadow-lg:0 16px 40px rgba(0,0,0,.55); color-scheme:dark; } }
+
+  *,*::before,*::after{box-sizing:border-box;} html,body{height:100%;}
+  body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3,h4{font-family:var(--font-heading);font-weight:400;line-height:1.14;letter-spacing:-.015em;margin:0;text-wrap:balance;}
+  .mono{font-family:var(--font-mono);} .nums{font-variant-numeric:tabular-nums;} .muted{color:color-mix(in srgb,var(--color-text) 55%,transparent);}
+  a{color:var(--color-accent);} :focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;} ::selection{background:color-mix(in srgb,var(--color-accent) 30%,transparent);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;text-decoration:none;font-family:var(--font-heading);font-size:13px;color:var(--color-text);background:transparent;border:1px solid transparent;padding:7px 13px;border-radius:999px;}
+  .btn-primary{background:var(--color-accent);color:var(--color-bg);} .btn-primary:hover{background:var(--color-accent-600);}
+  .btn-secondary{border-color:var(--color-divider);} .btn-secondary:hover{background:color-mix(in srgb,var(--color-text) 7%,transparent);}
+  .btn-icon{width:34px;height:34px;padding:0;} .btn-block{width:100%;}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 10px;border-radius:999px;white-space:nowrap;}
+  .tag-accent{background:var(--color-accent-100);color:var(--color-accent-800);} .tag-accent-2{background:var(--color-accent-2-100);color:var(--color-accent-2-800);}
+  .tag-neutral{background:var(--color-neutral-100);color:var(--color-neutral-800);} .tag-outline{border:1px solid var(--color-accent);color:var(--color-accent);}
+  :root[data-theme="dark"] .tag-accent{background:color-mix(in srgb,var(--color-accent) 22%,transparent);color:var(--color-accent-200);}
+  :root[data-theme="dark"] .tag-accent-2{background:color-mix(in srgb,var(--color-accent-2) 22%,transparent);color:var(--color-accent-2-200);}
+  :root[data-theme="dark"] .tag-neutral{background:color-mix(in srgb,var(--color-text) 12%,transparent);color:var(--color-text);}
+  .input{min-height:34px;padding:6px 14px;font:inherit;font-size:13px;color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-divider);border-radius:999px;width:100%;}
+  .card{background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-4);}
+  .table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .table th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 58%,transparent);padding:9px 12px;border-bottom:1px solid var(--color-divider);position:sticky;top:0;background:var(--color-surface);}
+  .table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--color-text) 8%,transparent);vertical-align:middle;}
+  .table tbody tr:hover{background:color-mix(in srgb,var(--color-text) 4%,transparent);cursor:pointer;}
+
+  /* shell */
+  .app{display:grid;height:100vh;grid-template-rows:56px 1fr 46px;grid-template-columns:224px 1fr;grid-template-areas:"top top" "rail main" "strip strip";}
+  .topbar{grid-area:top;display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-4);background:var(--color-surface);border-bottom:1px solid var(--color-divider);z-index:5;}
+  .brand{display:flex;align-items:center;gap:9px;font-family:var(--font-heading);font-size:19px;letter-spacing:-.02em;}
+  .switcher{display:flex;align-items:center;gap:7px;padding:5px 8px 5px 12px;background:var(--color-bg);border:1px solid var(--color-divider);border-radius:999px;font-size:13px;cursor:pointer;}
+  .switcher b{font-family:var(--font-heading);font-weight:400;} .search{position:relative;flex:1;max-width:400px;} .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:.5;} .search .input{padding-left:36px;}
+  .spacer{flex:1;} .recon-pill{display:inline-flex;align-items:center;gap:8px;padding:5px 12px 5px 10px;border-radius:999px;font-size:12px;background:color-mix(in srgb,var(--color-accent) 12%,transparent);color:var(--color-accent-800);}
+  :root[data-theme="dark"] .recon-pill{color:var(--color-accent-200);}
+  .rdot{width:8px;height:8px;border-radius:50%;background:var(--active);animation:pulse 2s infinite;} @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--active) 55%,transparent);}70%{box-shadow:0 0 0 7px transparent;}100%{box-shadow:0 0 0 0 transparent;}}
+  .rail{grid-area:rail;background:var(--color-surface);border-right:1px solid var(--color-divider);padding:var(--space-3) var(--space-2);display:flex;flex-direction:column;gap:2px;overflow:auto;}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:999px;cursor:pointer;font-size:14px;color:var(--color-text);}
+  .navitem svg{opacity:.72;flex:none;} .navitem .cnt{margin-left:auto;font-size:11px;color:color-mix(in srgb,var(--color-text) 45%,transparent);}
+  .navitem:hover{background:color-mix(in srgb,var(--color-text) 6%,transparent);}
+  .navitem[aria-current="page"]{background:var(--color-accent);color:var(--color-bg);} .navitem[aria-current="page"] svg{opacity:1;} .navitem[aria-current="page"] .cnt{color:color-mix(in srgb,var(--color-bg) 80%,transparent);}
+  .main{grid-area:main;overflow:auto;position:relative;} .view{display:none;} .view.on{display:block;}
+  .vhead{display:flex;align-items:flex-end;gap:var(--space-3);padding:var(--space-6) var(--space-6) var(--space-3);}
+  .vhead h1{font-size:30px;} .vhead .sub{font-size:13px;} .vbody{padding:0 var(--space-6) var(--space-8);}
+  .stats{display:flex;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4);}
+  .stat{background:var(--color-surface);border-radius:var(--radius-lg);padding:14px 18px;min-width:120px;}
+  .stat .n{font-family:var(--font-heading);font-size:28px;line-height:1;} .stat .l{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 52%,transparent);margin-top:6px;}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:var(--space-3);flex-wrap:wrap;}
+  .chip{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--color-divider);cursor:pointer;background:var(--color-surface);}
+  .chip[aria-pressed="true"]{background:var(--color-accent);color:var(--color-bg);border-color:transparent;}
+  .cov{display:inline-flex;align-items:center;gap:6px;font-size:12px;} .covdot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .tablewrap{background:var(--color-surface);border-radius:var(--radius-lg);overflow:auto;max-height:calc(100vh - 340px);}
+  .cite{font-family:var(--font-mono);font-size:11.5px;color:color-mix(in srgb,var(--color-text) 60%,transparent);}
+  .prov{font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:999px;}
+  .prov.high{background:var(--color-accent-2-100);color:var(--color-accent-2-800);} .prov.med{background:var(--color-accent-100);color:var(--color-accent-800);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);} .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);}
+  @media (max-width:980px){.grid2,.grid3{grid-template-columns:1fr;}}
+  .h4lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent);margin-bottom:10px;}
+
+  /* strip */
+  .strip{grid-area:strip;display:flex;align-items:center;gap:var(--space-4);padding:0 var(--space-4);background:var(--color-surface);border-top:1px solid var(--color-divider);font-size:12px;overflow:hidden;}
+  .strip .seg{display:flex;align-items:center;gap:8px;white-space:nowrap;} .strip .sep{width:1px;height:20px;background:var(--color-divider);}
+  .worker{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--color-bg);border:1px solid var(--color-divider);} .wk-dot{width:7px;height:7px;border-radius:50%;}
+  .bar{height:6px;width:110px;border-radius:999px;background:color-mix(in srgb,var(--color-text) 12%,transparent);overflow:hidden;} .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--color-accent),var(--color-accent-2));}
+  .ticker{flex:1;overflow:hidden;} .ticker .ev{color:color-mix(in srgb,var(--color-text) 62%,transparent);} .ev .mono{color:var(--color-accent);}
+
+  /* brain */
+  .brain{position:absolute;inset:0;overflow:hidden;background:radial-gradient(120% 120% at 30% 0%,color-mix(in srgb,var(--color-accent) 6%,transparent),transparent 55%),radial-gradient(100% 100% at 90% 100%,color-mix(in srgb,var(--color-accent-2) 7%,transparent),transparent 50%),var(--color-bg);}
+  #net{position:absolute;inset:0;width:100%;height:100%;} .node text{font-family:var(--font-heading);pointer-events:none;fill:var(--color-text);} .node{cursor:pointer;}
+  .legend{position:absolute;right:18px;bottom:18px;background:color-mix(in srgb,var(--color-surface) 88%,transparent);backdrop-filter:blur(4px);border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:11px 13px;font-size:11px;}
+  .legend .row{display:flex;align-items:center;gap:8px;padding:2px 0;} .legend .sw{width:11px;height:11px;border-radius:50%;flex:none;}
+  .tt{position:absolute;pointer-events:none;background:var(--color-neutral-900);color:var(--color-neutral-100);font-size:12px;padding:5px 9px;border-radius:8px;opacity:0;transform:translate(-50%,-140%);transition:opacity .12s;z-index:6;white-space:nowrap;}
+  .brainInsp{position:absolute;right:18px;top:18px;width:296px;max-height:calc(100% - 120px);overflow:auto;background:color-mix(in srgb,var(--color-surface) 94%,transparent);backdrop-filter:blur(6px);border:1px solid var(--color-divider);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow-md);}
+
+  /* coverage matrix heatmap */
+  .matrix{display:grid;gap:3px;font-size:11px;} .cell{height:26px;border-radius:6px;display:grid;place-items:center;font-size:9px;color:var(--color-bg);cursor:pointer;}
+  .m0{background:var(--color-neutral-300);color:var(--color-text);} .m1{background:var(--color-accent-2-500);} .m2{background:var(--color-accent-500);} .m3{background:var(--gap);} .m4{background:var(--color-neutral-500);}
+  .rowlbl{font-size:11px;display:flex;align-items:center;padding-right:8px;} .collbl{font-size:10px;color:color-mix(in srgb,var(--color-text) 55%,transparent);writing-mode:vertical-rl;text-align:end;height:70px;}
+
+  /* timeline */
+  .tl{position:relative;padding-left:26px;} .tl::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:2px;background:var(--color-divider);}
+  .tl .it{position:relative;padding:10px 0;} .tl .it::before{content:"";position:absolute;left:-22px;top:14px;width:12px;height:12px;border-radius:50%;background:var(--color-accent);border:2px solid var(--color-bg);}
+  .tl .it.ok::before{background:var(--ok);} .tl .it.gap::before{background:var(--gap);} .tl .t{font-size:11px;color:color-mix(in srgb,var(--color-text) 50%,transparent);} .mono2{font-family:var(--font-mono);font-size:11px;}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="var(--color-accent)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="4"/><circle cx="7" cy="8" r="2.4"/><circle cx="25" cy="9" r="2.4"/><circle cx="8" cy="24" r="2.4"/><circle cx="24" cy="24" r="2.4"/><path d="M12.6 13.4 8.7 9.6M19.4 13 23 10.4M12.8 18.6 9.4 22.4M19.2 18.8 22.6 22.2"/></svg>Codengram</div>
+    <button class="switcher"><b>acme-commerce</b><span class="muted">· 8f2c1a</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input class="input" placeholder="Search the brain…"></div>
+    <span class="spacer"></span>
+    <span class="recon-pill"><span class="rdot"></span>Recon · mapping <b class="nums">3</b>/10</span>
+    <button class="btn btn-secondary"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M5 21h14"/></svg>Export</button>
+    <button class="btn btn-icon btn-secondary" id="themeBtn" title="Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+  </header>
+
+  <nav class="rail" id="rail"></nav>
+
+  <main class="main" id="main"></main>
+
+  <footer class="strip">
+    <div class="seg"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.75"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg><b style="font-family:var(--font-heading)">Lead</b> planning · v2</div>
+    <div class="sep"></div><div class="seg"><span class="muted">Workers</span><span class="worker"><span class="wk-dot" style="background:var(--active)"></span>Identity</span><span class="worker"><span class="wk-dot" style="background:var(--active)"></span>Payments</span><span class="worker"><span class="wk-dot" style="background:var(--active)"></span>Storefront</span><span class="worker"><span class="wk-dot" style="background:var(--stale)"></span>+7 queued</span></div>
+    <div class="sep"></div><div class="seg"><span class="muted">Coverage</span><span class="bar"><i style="width:86%"></i></span><b class="nums">86%</b></div>
+    <div class="sep"></div><div class="seg ticker"><span class="ev"><span class="mono">08:41:12</span> &nbsp;worker <b>Identity</b> mapped <b>OAuth sign-in</b> · 6 endpoints, 2 roles → graph +14 nodes</span></div>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const root=document.documentElement, C=v=>getComputedStyle(root).getPropertyValue(v).trim();
+  document.getElementById('themeBtn').onclick=()=>{ const dark=root.getAttribute('data-theme')==='dark'||(root.getAttribute('data-theme')!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches); root.setAttribute('data-theme',dark?'light':'dark'); if(current==='brain') drawBrain(); };
+  const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+  // nav
+  const ic={brain:'<circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="1.6"/><circle cx="19" cy="6" r="1.6"/><circle cx="5" cy="18" r="1.6"/><circle cx="19" cy="18" r="1.6"/><path d="m9.7 10.4-3-3M14.3 10.4l3-3M9.7 13.6l-3 3M14.3 13.6l3 3"/>',
+    features:'<rect x="3" y="4" width="18" height="4" rx="1.5"/><rect x="3" y="10" width="18" height="4" rx="1.5"/><rect x="3" y="16" width="18" height="4" rx="1.5"/>',
+    architecture:'<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="9" y="14" width="6" height="6" rx="1.5"/><path d="M7 10v2h10v-2M12 12v2"/>',
+    identity:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    interfaces:'<path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/>',
+    dataflows:'<path d="M3 6h5l2 3h11"/><path d="M3 6v12h18V9"/><path d="m14 13 3 3-3 3"/>',
+    coverage:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/>',
+    activity:'<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/>',
+    exports:'<path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/>'};
+  const NAV=[['brain','Brain',''],['features','Features','42'],['architecture','Architecture',''],['identity','Identity','9'],['interfaces','Interfaces','188'],['dataflows','Data Flows',''],['coverage','Coverage','86%'],['activity','Activity',''],['exports','Exports','']];
+  const rail=document.getElementById('rail');
+  rail.innerHTML=NAV.map(([k,l,c])=>`<div class="navitem" data-v="${k}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75">${ic[k]}</svg><span>${l}</span>${c?`<span class="cnt nums">${c}</span>`:''}</div>`).join('')
+    +`<div style="margin-top:auto;padding:12px;"><div class="tag tag-accent-2" style="width:100%;justify-content:center;">Recon only · never security review</div></div>`;
+
+  const cov=(k)=>({mapped:['var(--ok)','mapped'],mapping:['var(--active)','mapping'],gap:['var(--gap)','coverage gap'],shared:['var(--color-accent-2-400)','shared infra'],dead:['var(--stale)','dead code']}[k]||['var(--stale)',k]);
+  const covTag=k=>{const[c,l]=cov(k);return `<span class="cov"><span class="covdot" style="background:${c}"></span>${l}</span>`;};
+
+  // ── DATA (recon facts — structure, not vulnerabilities) ────────────────────────────────
+  const FEATURES=[
+    ['Checkout','Storefront',3,'guest, member','mapped','high','app/controllers/checkout_controller.rb'],
+    ['Cart','Storefront',4,'guest, member','mapped','high','app/controllers/carts_controller.rb'],
+    ['Catalog','Storefront',6,'guest','mapping','med','app/controllers/products_controller.rb'],
+    ['OAuth sign-in','Identity',4,'guest → member','mapping','high','app/controllers/sessions_controller.rb'],
+    ['Sessions','Identity',3,'member','mapped','high','app/controllers/sessions_controller.rb'],
+    ['Roles & policies','Identity',2,'all','mapping','med','app/policies/'],
+    ['Refunds','Payments',2,'staff, admin','mapped','high','app/services/payment_service.rb'],
+    ['Payouts','Payments',3,'admin','gap','—','app/services/payouts/'],
+    ['Webhooks','Payments',5,'system','mapping','med','app/controllers/webhooks_controller.rb'],
+    ['Settings','Admin',7,'admin','mapped','high','app/controllers/admin/settings_controller.rb'],
+    ['Audit log','Admin',2,'admin','mapped','high','app/models/audit_event.rb'],
+    ['Product search','Search',3,'guest','mapped','high','app/services/search/query.rb'],
+    ['Uploads','Media',2,'member','gap','—','app/controllers/uploads_controller.rb'],
+  ];
+  const INTERFACES=[
+    ['REST','GET','/products','ProductsController#index','session · optional'],
+    ['REST','POST','/cart/items','CartsController#add','session'],
+    ['REST','POST','/checkout','CheckoutController#create','session · member'],
+    ['REST','POST','/refunds','RefundsController#create','session · staff'],
+    ['REST','GET','/admin/settings','Admin::SettingsController#show','admin + mode'],
+    ['GraphQL','QUERY','products(filter)','Resolvers::Products','session · optional'],
+    ['GraphQL','MUTATION','createOrder','Mutations::CreateOrder','session · member'],
+    ['Webhook','POST','/webhooks/stripe','WebhooksController#stripe','signature'],
+    ['Job','—','RefundEmailJob','app/jobs/refund_email_job.rb','worker'],
+    ['Job','—','ReindexProductsJob','app/jobs/reindex_products_job.rb','scheduler'],
+    ['WebSocket','SUB','OrdersChannel','app/channels/orders_channel.rb','session · member'],
+  ];
+  const ROLES=[
+    ['guest','Anonymous visitor','browse, cart','session (anon)'],
+    ['member','Signed-in customer','order, profile','session + OAuth'],
+    ['staff','Support agent','refunds, orders','session + role'],
+    ['admin','Instance admin','all + settings','session + admin mode'],
+    ['system','Internal / webhooks','callbacks','signature / token'],
+  ];
+  const CAPS=['browse','order','refund','settings','audit'];
+  const PERM={guest:[1,0,0,0,0],member:[1,1,0,0,0],staff:[1,1,1,0,0],admin:[1,1,1,1,1],system:[0,0,1,0,1]};
+  const FLOWS=[
+    ['Checkout → charge','Cart items + address','PaymentService → Stripe','crosses payment boundary','high'],
+    ['OAuth callback','Provider profile','Users::LinkOAuthService → Identity','crosses identity boundary','high'],
+    ['Product search','Query params','Search::Query → Elasticsearch','internal','high'],
+    ['Refund','Order + amount','PaymentService#refund → Stripe','crosses payment boundary','high'],
+    ['Upload','User file','ActiveStorage → S3','crosses storage boundary','med'],
+    ['Webhook','Signed payload','WebhooksController → OrderState','ingress boundary','med'],
+  ];
+  const TIMELINE=[
+    ['08:41:12','Identity','worker mapped OAuth sign-in — 6 endpoints, 2 roles','ok'],
+    ['08:40:55','Lead','plan v2 — added follow-up feature "account linking"',''],
+    ['08:39:30','Payments','worker mapped Refunds — Stripe integration, 1 job','ok'],
+    ['08:38:02','Media','⚠ Uploads flagged coverage gap — ActiveStorage config not in tree','gap'],
+    ['08:36:40','Storefront','worker claimed Checkout, Cart, Catalog (3 features)',''],
+    ['08:35:10','Lead','recon plan validated — 10 workstreams, 3 active, 7 queued',''],
+    ['08:34:20','—','snapshot 8f2c1a created — 1,204 files, ~1.9M tokens, Rails 7',''],
+  ];
+
+  // ── VIEWS ──────────────────────────────────────────────────────────────────────────────
+  const stat=(n,l)=>`<div class="stat"><div class="n nums">${n}</div><div class="l">${l}</div></div>`;
+  const provTag=c=>c==='—'?'<span class="muted">—</span>':`<span class="prov ${c==='high'?'high':'med'}">${c}</span>`;
+
+  const VIEWS={
+    features:()=>`<div class="vhead"><h1>Features</h1><span class="sub muted">Every capability the codebase exposes — discovered from routes, controllers and services, each traced to source.</span></div>
+      <div class="vbody"><div class="stats">${stat(42,'discovered')}${stat(36,'mapped')}${stat(4,'mapping')}${stat(2,'coverage gaps')}</div>
+      <div class="toolbar"><div class="chip" aria-pressed="true">All</div><div class="chip">Storefront</div><div class="chip">Identity</div><div class="chip">Payments</div><div class="chip">Admin</div><span class="spacer"></span><input class="input" style="max-width:220px" placeholder="Filter features…"></div>
+      <div class="tablewrap"><table class="table"><thead><tr><th>Feature</th><th>Domain</th><th>Entry points</th><th>Roles</th><th>Coverage</th><th>Confidence</th><th>Primary source</th></tr></thead><tbody>
+      ${FEATURES.map(([f,d,e,r,s,c,src])=>`<tr><td><b style="font-family:var(--font-heading)">${f}</b></td><td><span class="tag tag-neutral">${d}</span></td><td class="nums">${e}</td><td class="muted">${r}</td><td>${covTag(s)}</td><td>${provTag(c)}</td><td class="cite">${esc(src)}</td></tr>`).join('')}
+      </tbody></table></div></div>`,
+
+    architecture:()=>`<div class="vhead"><h1>Architecture</h1><span class="sub muted">How the system runs — processes, startup order, IPC, data stores and external services.</span></div>
+      <div class="vbody"><div class="grid3">
+        <div class="card"><div class="h4lbl">Processes</div>
+          <div class="rel"><span class="tag tag-accent">web</span> Puma · Rails · 4 workers</div>
+          <div class="rel"><span class="tag tag-accent">worker</span> Sidekiq · 3 queues (default, mailers, low)</div>
+          <div class="rel"><span class="tag tag-accent">scheduler</span> Clockwork · reindex, cleanup</div>
+          <div class="rel"><span class="tag tag-accent">cable</span> ActionCable · OrdersChannel</div></div>
+        <div class="card"><div class="h4lbl">Data stores</div>
+          <div class="rel"><span class="tag tag-accent-2">PostgreSQL</span> primary · 41 models</div>
+          <div class="rel"><span class="tag tag-accent-2">Redis</span> Sidekiq + cache</div>
+          <div class="rel"><span class="tag tag-accent-2">Elasticsearch</span> product search</div>
+          <div class="rel"><span class="tag tag-accent-2">S3</span> ActiveStorage uploads</div></div>
+        <div class="card"><div class="h4lbl">External services</div>
+          <div class="rel"><span class="tag tag-outline">Stripe</span> payments · webhooks</div>
+          <div class="rel"><span class="tag tag-outline">Google / GitHub</span> OAuth</div>
+          <div class="rel"><span class="tag tag-outline">SendGrid</span> transactional email</div>
+          <div class="rel"><span class="tag tag-outline">Elasticsearch Cloud</span> search</div></div>
+      </div>
+      <div class="card" style="margin-top:var(--space-3)"><div class="h4lbl">Startup order (config/ + Procfile)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;">
+          ${['boot.rb','application.rb','initializers/*','routes.rb','Puma / Sidekiq / Clockwork'].map((s,i)=>`<span class="tag tag-neutral mono" style="font-family:var(--font-mono)">${s}</span>${i<4?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.75"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>':''}`).join('')}
+        </div><p class="cite" style="margin-top:10px">config/application.rb:1–48 · Procfile:1–4 · <span class="prov high">high</span></p></div>
+      </div>`,
+
+    identity:()=>`<div class="vhead"><h1>Identity</h1><span class="sub muted">Who can do what — actors, authentication mechanisms, roles and the permission matrix.</span></div>
+      <div class="vbody"><div class="stats">${stat(9,'roles & actors')}${stat(3,'auth mechanisms')}${stat(24,'policies')}${stat('86%','identity mapped')}</div>
+      <div class="grid2"><div class="card"><div class="h4lbl">Roles & actors</div><table class="table"><thead><tr><th>Role</th><th>Actor</th><th>Can</th><th>Authenticated by</th></tr></thead><tbody>
+        ${ROLES.map(([r,a,c,au])=>`<tr><td><span class="tag tag-accent">${r}</span></td><td>${a}</td><td class="muted">${c}</td><td class="cite">${au}</td></tr>`).join('')}</tbody></table></div>
+        <div class="card"><div class="h4lbl">Permission matrix · role × capability</div><table class="table"><thead><tr><th>Role</th>${CAPS.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>
+        ${Object.keys(PERM).map(r=>`<tr><td><b style="font-family:var(--font-heading)">${r}</b></td>${PERM[r].map(v=>`<td>${v?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="3"><path d="m5 12 5 5 9-11"/></svg>':'<span class="muted">·</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <p class="cite" style="margin-top:8px">app/policies/*.rb · config/initializers/devise.rb · <span class="prov high">high</span></p></div></div>
+      <div class="card" style="margin-top:var(--space-3)"><div class="h4lbl">Authentication flows</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;">Password · <span class="tag tag-neutral mono">Devise</span> &nbsp;|&nbsp; OAuth · <span class="tag tag-neutral mono">OmniAuth (Google, GitHub)</span> &nbsp;|&nbsp; API · <span class="tag tag-neutral mono">Bearer token</span> &nbsp;|&nbsp; Admin · <span class="tag tag-neutral mono">step-up mode</span></div></div>
+      </div>`,
+
+    interfaces:()=>`<div class="vhead"><h1>Interfaces</h1><span class="sub muted">Every entry and exit — REST, GraphQL, WebSocket, webhooks and background jobs.</span></div>
+      <div class="vbody"><div class="stats">${stat(188,'endpoints')}${stat(142,'REST')}${stat(28,'GraphQL')}${stat(11,'webhooks')}${stat(7,'jobs')}</div>
+      <div class="toolbar">${['All','REST','GraphQL','Webhook','Job','WebSocket'].map((c,i)=>`<div class="chip"${i===0?' aria-pressed="true"':''}>${c}</div>`).join('')}<span class="spacer"></span><input class="input" style="max-width:220px" placeholder="Filter by path or handler…"></div>
+      <div class="tablewrap"><table class="table"><thead><tr><th>Kind</th><th>Method</th><th>Path / operation</th><th>Handler</th><th>Auth</th></tr></thead><tbody>
+      ${INTERFACES.map(([k,m,p,h,a])=>`<tr><td><span class="tag ${k==='REST'?'tag-accent':k==='GraphQL'?'tag-accent-2':'tag-neutral'}">${k}</span></td><td class="mono" style="font-family:var(--font-mono);font-size:11px">${m}</td><td class="mono" style="font-family:var(--font-mono);font-size:12px">${esc(p)}</td><td class="cite">${esc(h)}</td><td class="muted">${a}</td></tr>`).join('')}
+      </tbody></table></div><p class="cite" style="margin-top:10px">Showing 11 of 188 · every row traces to file:line with confidence.</p></div>`,
+
+    dataflows:()=>`<div class="vhead"><h1>Data Flows</h1><span class="sub muted">Where data moves — source → transform → sink — and which trust boundaries each flow crosses.</span></div>
+      <div class="vbody"><div class="grid2" style="align-items:start">
+      <div class="card"><div class="h4lbl">Flows</div><table class="table"><thead><tr><th>Flow</th><th>Source → sink</th><th>Boundary</th><th></th></tr></thead><tbody>
+        ${FLOWS.map(([f,s,t,b,c])=>`<tr><td><b style="font-family:var(--font-heading)">${f}</b><div class="cite">${esc(s)}</div></td><td class="cite">${esc(t)}</td><td>${b.includes('crosses')||b.includes('ingress')?`<span class="tag tag-accent">${b}</span>`:`<span class="tag tag-neutral">${b}</span>`}</td><td>${provTag(c)}</td></tr>`).join('')}</tbody></table></div>
+      <div class="card"><div class="h4lbl">Trust boundaries · outermost → innermost</div>
+        ${['Browser / public client','Rails app (authenticated)','Service layer / policies','Payment boundary (Stripe)','Data stores (PostgreSQL, S3)'].map((b,i)=>`<div class="rel" style="border:1px solid var(--color-divider);margin:6px 0;border-radius:999px;padding:8px 14px"><span class="tag tag-neutral nums">L${i+1}</span> ${b}</div>`).join('')}
+        <p class="cite" style="margin-top:8px">Boundaries synthesized from Phase 6 · every crossing carries provenance.</p></div>
+      </div></div>`,
+
+    coverage:()=>{ const rows=FEATURES.map(f=>f[0]); const cols=['routes','controllers','services','policies','models','jobs'];
+      const seed=(r,c)=>{ const s=rows[r].length*7+c*13; const v=[1,1,1,2,0,3,4][ (s)%7 ]; return v; };
+      return `<div class="vhead"><h1>Coverage</h1><span class="sub muted">Reconciliation of every inventory item against features — nothing disappears silently.</span></div>
+      <div class="vbody"><div class="stats">${stat('86%','mapped')}${stat(1204,'source files')}${stat(11,'inventories')}${stat(2,'coverage gaps')}</div>
+      <div class="toolbar" style="gap:16px">${[['m1','mapped to feature'],['m2','currently mapping'],['m1b','shared infrastructure'],['m3','coverage gap'],['m4','dead / unreachable']].map(([,l],i)=>`<span class="cov"><span class="covdot" style="background:${['var(--ok)','var(--active)','var(--color-accent-2-400)','var(--gap)','var(--stale)'][i]}"></span>${l}</span>`).join('')}</div>
+      <div class="card"><div class="matrix" style="grid-template-columns:150px repeat(${cols.length},1fr)">
+        <div></div>${cols.map(c=>`<div class="collbl">${c}</div>`).join('')}
+        ${rows.map((r,ri)=>`<div class="rowlbl">${r}</div>`+cols.map((c,ci)=>{const v=seed(ri,ci);return `<div class="cell m${v}" title="${r} × ${c}"></div>`;}).join('')).join('')}
+      </div></div>
+      <div class="card" style="margin-top:var(--space-3);display:flex;align-items:center;gap:14px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--gap)" stroke-width="2.75"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg><div><b style="font-family:var(--font-heading)">Completion gate — COMPLETE_WITH_GAPS</b><div class="cite">2 coverage gaps (Payouts, Uploads) awaiting source · 0 unreconciled inventory items · Markdown ↔ graph counts agree.</div></div><span class="spacer"></span><button class="btn btn-secondary">View gate report</button></div>
+      </div>`; },
+
+    activity:()=>`<div class="vhead"><h1>Activity</h1><span class="sub muted">The live recon mission — plan, workers, follow-ups and events, straight from backend task state.</span></div>
+      <div class="vbody"><div class="grid2" style="align-items:start"><div class="card"><div class="h4lbl">Mission timeline</div><div class="tl">
+        ${TIMELINE.map(([t,who,txt,s])=>`<div class="it ${s}"><div class="t nums">${t} · <b style="font-family:var(--font-heading)">${who}</b></div><div style="font-size:13px">${txt}</div></div>`).join('')}
+      </div></div>
+      <div class="card"><div class="h4lbl">Lead session</div>
+        <div class="kv" style="display:flex;gap:8px;font-size:13px;padding:4px 0"><span class="muted" style="min-width:120px">State</span><span class="tag tag-accent">planning · v2</span></div>
+        <div class="kv" style="display:flex;gap:8px;font-size:13px;padding:4px 0"><span class="muted" style="min-width:120px">Workstreams</span><span>10 planned · 3 active · 7 queued</span></div>
+        <div class="kv" style="display:flex;gap:8px;font-size:13px;padding:4px 0"><span class="muted" style="min-width:120px">Concurrency</span><span>3 of max 4 · Sonnet workers</span></div>
+        <div class="kv" style="display:flex;gap:8px;font-size:13px;padding:4px 0"><span class="muted" style="min-width:120px">Context budget</span><span>~520k usable · 61% used</span></div>
+        <div class="kv" style="display:flex;gap:8px;font-size:13px;padding:4px 0"><span class="muted" style="min-width:120px">Follow-ups</span><span>1 (account linking) queued</span></div>
+        <div class="kv" style="display:flex;gap:8px;font-size:13px;padding:4px 0"><span class="muted" style="min-width:120px">Rate limits</span><span class="cov"><span class="covdot" style="background:var(--ok)"></span>healthy</span></div>
+        <div class="h4lbl" style="margin-top:16px">Active workers</div>
+        ${[['Identity','OAuth sign-in',72],['Payments','Webhooks',48],['Storefront','Catalog',35]].map(([w,f,p])=>`<div class="rel" style="gap:10px"><span class="worker"><span class="wk-dot" style="background:var(--active)"></span>${w}</span><span class="muted" style="font-size:12px">${f}</span><span class="spacer"></span><span class="bar" style="width:90px"><i style="width:${p}%"></i></span></div>`).join('')}
+      </div></div></div>`,
+
+    exports:()=>`<div class="vhead"><h1>Exports</h1><span class="sub muted">Hand the brain to another AI session — portable, self-describing, and understood without this UI.</span></div>
+      <div class="vbody"><div class="grid3">
+        ${[['Full','Everything — every feature doc, the whole graph, inventories, consolidated matrices and snapshots.','~28 MB'],['Portable','The brain minus raw source — feature maps, graph, AI_CONTEXT. Drops into a fresh Claude session.','~4 MB'],['Feature context','One feature and its neighbourhood — for a focused task.','~120 KB']].map(([t,d,s],i)=>`<div class="card"><div class="card-kicker" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">${i===1?'Recommended':'Export mode'}</div><h3 style="font-size:20px;margin:6px 0">${t}</h3><p class="muted" style="font-size:13px;flex:1">${d}</p><div class="cite" style="margin:8px 0">${s}</div><button class="btn ${i===1?'btn-primary':'btn-secondary'} btn-block" style="width:100%">Export ${t}</button></div>`).join('')}
+      </div>
+      <div class="card" style="margin-top:var(--space-3)"><div class="h4lbl">Bundle contents · portable</div>
+        <div class="grid2"><div>${['AI_CONTEXT.md — read-order, statuses, citation rules, known gaps','README.md','manifest.json + checksums','features/*.md (42)'].map(f=>`<div class="rel mono2" style="font-family:var(--font-mono)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.75"><path d="M6 2h9l5 5v15H6z"/></svg>${esc(f)}</div>`).join('')}</div>
+        <div>${['graph/nodes.jsonl (3,410)','graph/edges.jsonl (9,882)','graph/aliases.json','consolidated/* (coverage, gate, cross-check)'].map(f=>`<div class="rel mono2" style="font-family:var(--font-mono)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-2)" stroke-width="2.75"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7.5 7.5 11 16M16.5 7.5 13 16"/></svg>${esc(f)}</div>`).join('')}</div></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.75"><path d="M20 6 9 17l-5-5"/></svg><span style="font-size:13px">A fresh Claude session opens <b class="mono2" style="font-family:var(--font-mono)">AI_CONTEXT.md</b> first and can navigate the whole codebase with zero prior context.</span><span class="spacer"></span><button class="btn btn-secondary">Import a bundle</button></div>
+      </div></div>`,
+  };
+
+  // ── Brain view (rendered separately with the neural graph) ──────────────────────────────
+  const NS='http://www.w3.org/2000/svg';
+  const FAM={project:{c:'--color-neutral-800',r:24},domain:{c:'--color-neutral-700',r:17},feature:{c:'--color-accent',r:11}};
+  const project={id:'p',type:'project',label:'acme-commerce',fam:'project'};
+  const domains=[['d1','Storefront','mapping'],['d2','Identity','mapping'],['d3','Payments','mapping'],['d4','Admin','mapped'],['d5','Search','mapped'],['d6','Media','gap']].map(([id,label,status])=>({id,label,status,type:'domain',fam:'domain'}));
+  const gfeatures=FEATURES.map((f,i)=>({id:'gf'+i,label:f[0],d:({Storefront:'d1',Identity:'d2',Payments:'d3',Admin:'d4',Search:'d5',Media:'d6'})[f[1]],status:f[4],type:'feature',fam:'feature'}));
+  const gnodes=[project,...domains,...gfeatures], gedges=[]; domains.forEach(d=>gedges.push(['p',d.id])); gfeatures.forEach(f=>gedges.push([f.d,f.id]));
+  let selected='gf3', hovered=null, gscale=1;
+  function glayout(svg){ const W=svg.clientWidth,H=svg.clientHeight,cx=W/2,cy=H/2; project.x=cx;project.y=cy;
+    const R1=Math.min(W,H)*0.19,R2=Math.min(W,H)*0.36;
+    domains.forEach((d,i)=>{const a=-Math.PI/2+i/domains.length*Math.PI*2; d.x=cx+Math.cos(a)*R1; d.y=cy+Math.sin(a)*R1; d._a=a;});
+    const by={}; gfeatures.forEach(f=>{(by[f.d]=by[f.d]||[]).push(f);});
+    domains.forEach(d=>{const fs=by[d.id]||[]; fs.forEach((f,j)=>{const a=d._a+(fs.length>1?(j/(fs.length-1)-0.5)*0.6:0),rr=R2+(j%2?16:-6); f.x=cx+Math.cos(a)*rr; f.y=cy+Math.sin(a)*rr;});});
+  }
+  function ring(el,n){ if(n.status==='mapping'){el.setAttribute('stroke',C('--active'));el.setAttribute('stroke-width','2.5');el.setAttribute('stroke-dasharray','3 3');el.style.animation='spin 8s linear infinite';}
+    else if(n.status==='gap'){el.setAttribute('stroke',C('--gap'));el.setAttribute('stroke-width','2');el.setAttribute('stroke-dasharray','4 4');}
+    else{el.setAttribute('stroke','color-mix(in srgb,var(--color-text) 18%,transparent)');el.setAttribute('stroke-width','1');} }
+  const neigh=id=>{const s=new Set([id]);gedges.forEach(([a,b])=>{if(a===id)s.add(b);if(b===id)s.add(a);});return s;};
+  function drawBrain(){ const svg=document.getElementById('net'); if(!svg) return; glayout(svg); svg.innerHTML='';
+    const st=document.createElementNS(NS,'style'); st.textContent='@keyframes spin{to{stroke-dashoffset:-24}}'; svg.appendChild(st);
+    const g=document.createElementNS(NS,'g'); g.setAttribute('transform',`translate(${svg.clientWidth*(1-gscale)/2},${svg.clientHeight*(1-gscale)/2}) scale(${gscale})`); svg.appendChild(g);
+    const hl=hovered?neigh(hovered):(selected?neigh(selected):null);
+    gedges.forEach(([a,b])=>{const na=gnodes.find(n=>n.id===a),nb=gnodes.find(n=>n.id===b),mx=(na.x+nb.x)/2,my=(na.y+nb.y)/2,dx=nb.x-na.x,dy=nb.y-na.y;
+      const p=document.createElementNS(NS,'path');p.setAttribute('d',`M${na.x} ${na.y} Q${mx-dy*0.12} ${my+dx*0.12} ${nb.x} ${nb.y}`);const on=hl?(hl.has(a)&&hl.has(b)):true;
+      p.setAttribute('fill','none');p.setAttribute('stroke',on?C('--color-accent'):'color-mix(in srgb,var(--color-text) 14%,transparent)');p.setAttribute('stroke-width',on&&hl?1.6:1);p.setAttribute('opacity',hl&&!on?0.25:0.6);g.appendChild(p);});
+    gnodes.forEach(n=>{const f=FAM[n.fam],gg=document.createElementNS(NS,'g');gg.setAttribute('class','node');gg.setAttribute('transform',`translate(${n.x} ${n.y})`);const dim=hl&&!hl.has(n.id);
+      const c=document.createElementNS(NS,'circle');c.setAttribute('r',f.r);c.setAttribute('fill',C(f.c));c.setAttribute('opacity',dim?0.32:1);ring(c,n);
+      if(n.id===selected){c.setAttribute('stroke',C('--color-accent'));c.setAttribute('stroke-width','3');c.style.animation='';}gg.appendChild(c);
+      if(n.type!=='feature'||!dim){const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',f.r+(n.type==='project'?18:14));t.setAttribute('font-size',n.type==='project'?15:n.type==='domain'?12:10.5);t.setAttribute('opacity',dim?0.4:0.9);t.textContent=n.label;gg.appendChild(t);}
+      gg.onmouseenter=e=>{hovered=n.id;const tt=document.getElementById('tt');const b=svg.getBoundingClientRect();tt.style.left=(e.clientX-b.left)+'px';tt.style.top=(e.clientY-b.top)+'px';tt.textContent=n.label+(n.status?' · '+n.status:'');tt.style.opacity=1;drawBrain();};
+      gg.onmouseleave=()=>{hovered=null;const tt=document.getElementById('tt');if(tt)tt.style.opacity=0;drawBrain();};
+      gg.onclick=()=>{selected=n.id;brainInsp(n);drawBrain();};g.appendChild(gg);});
+  }
+  function brainInsp(n){ const el=document.getElementById('binsp'); if(!el) return;
+    const isF=n.type==='feature', dom=isF?FEATURES.find(f=>f[0]===n.label):null;
+    el.innerHTML=`<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">${isF?'Feature · '+(dom?dom[1]:''):n.type==='domain'?'Domain':'Project · Rails 7'}</div>
+      <h3 style="font-size:22px;margin:5px 0">${esc(n.label)}</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${n.status?covTag(n.status).replace('cov','tag tag-'+(n.status==='gap'?'neutral':'accent')).replace(/<span class="covdot"[^>]*><\/span>/,''):''}<span class="tag tag-neutral">8f2c1a</span></div>
+      ${isF?`<div class="h4lbl" style="margin-top:12px">Facts</div>
+        <div style="font-size:13px"><div class="rel" style="padding:3px 0"><span class="muted" style="min-width:90px">Entry points</span>${dom[2]} routes</div><div class="rel" style="padding:3px 0"><span class="muted" style="min-width:90px">Roles</span>${dom[3]}</div><div class="rel" style="padding:3px 0"><span class="muted" style="min-width:90px">Coverage</span>${dom[4]}</div></div>
+        <div class="h4lbl" style="margin-top:12px">Citations</div><div class="cite" style="background:var(--color-bg);border:1px solid var(--color-divider);border-radius:10px;padding:7px 10px">${esc(dom[6])} <span style="color:var(--color-accent)">· ${dom[5]}</span></div>`
+        :`<p class="muted" style="font-size:13px">${n.type==='domain'?FEATURES.filter(f=>({Storefront:'d1',Identity:'d2',Payments:'d3',Admin:'d4',Search:'d5',Media:'d6'})[f[1]]===n.id).length+' features · click to expand its neighbourhood.':'6 domains · 42 features · 86% mapped · 1,204 files.'}</p>`}
+      <button class="btn btn-primary btn-block" style="width:100%;margin-top:14px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75"><path d="M12 3a9 9 0 0 0-9 9c0 1.6.4 3 1.2 4.3L3 21l4.7-1.2A9 9 0 1 0 12 3Z"/></svg>Ask Claude about ${esc(n.label)}</button>`;
+  }
+  function brainView(){ return `<div class="brain"><svg id="net" aria-label="Neural map"></svg>
+    <div class="legend"><div class="row"><span class="sw" style="background:var(--color-neutral-800)"></span>Project / domain</div><div class="row"><span class="sw" style="background:var(--color-accent)"></span>Feature</div><div class="row"><span class="sw" style="border:2px dashed var(--gap);width:9px;height:9px"></span>Coverage gap</div><div class="row"><span class="sw" style="box-shadow:0 0 0 2px var(--active);background:transparent"></span>Currently mapping</div></div>
+    <div class="brainInsp" id="binsp"></div><div class="tt" id="tt"></div></div>`; }
+
+  // ── Router ─────────────────────────────────────────────────────────────────────────────
+  const main=document.getElementById('main'); let current='brain', ro=null;
+  function go(v){ current=v; rail.querySelectorAll('.navitem').forEach(n=>n.toggleAttribute('aria-current',n.dataset.v===v)&&n.setAttribute('aria-current','page')); rail.querySelectorAll('.navitem').forEach(n=>{ if(n.dataset.v===v)n.setAttribute('aria-current','page'); else n.removeAttribute('aria-current'); });
+    if(v==='brain'){ main.innerHTML=brainView(); const svg=document.getElementById('net'); const seed=gfeatures.find(f=>f.label==='OAuth sign-in'); selected=seed.id; brainInsp(seed); if(ro)ro.disconnect(); ro=new ResizeObserver(()=>drawBrain()); ro.observe(svg); requestAnimationFrame(drawBrain); }
+    else { if(ro){ro.disconnect();ro=null;} main.innerHTML=`<div class="view on">${VIEWS[v]()}</div>`; main.scrollTop=0;
+      main.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ c.parentElement.querySelectorAll('.chip').forEach(x=>x.removeAttribute('aria-pressed')); c.setAttribute('aria-pressed','true'); }); }
+  }
+  rail.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>go(n.dataset.v));
+  go('brain');
+})();
+</script>

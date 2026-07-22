@@ -1,0 +1,28 @@
+{
+  "name": "codengram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Map any codebase into a structured, cited map — features, endpoints, authorization, data flows — and export the whole thing (recon only).",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.162"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "bin": {
+    "codengram": "apps/cli/bin/codengram.js"
+  },
+  "scripts": {
+    "codengram": "node --disable-warning=ExperimentalWarning apps/cli/bin/codengram.js",
+    "scan": "node --disable-warning=ExperimentalWarning apps/cli/bin/codengram.js scan",
+    "doctor": "node --disable-warning=ExperimentalWarning apps/cli/bin/codengram.js doctor",
+    "serve": "node --disable-warning=ExperimentalWarning apps/server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test packages/*/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

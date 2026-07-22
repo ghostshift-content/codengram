@@ -8,7 +8,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { profileRepo } from '../profiler/index.js'
-import { extractInventories } from '../inventories/index.js'
+import { extractInventories, inventoryMeta, INVENTORY_EXTRACTOR_VERSION } from '../inventories/index.js'
 import { INVENTORY_KEYS } from '../plugins/index.js'
 import { openGraph, upsertNode, upsertEdge, addClaim, addReconItem, reconCounts, reconTotal, mergeStaging, counts, nodesByType } from '../graph/index.js'
 import { ID, slug } from '../schemas/index.js'
@@ -104,6 +104,8 @@ function nodeForRow(g, snapshot_id, featureId, kind, row) {
     case 'graphql': return mk({ type: 'GRAPHQL_OPERATION', id: ID.scoped('graphql', row.file, row.line, row.entry), name: row.entry.slice(0, 60) }, 'EXPOSES')
     case 'workers_jobs': return mk({ type: 'JOB', id: ID.scoped('job', row.file, row.line, row.entry), name: row.entry.slice(0, 60) }, 'EXPOSES')
     case 'services_finders_policies': {
+      if (row.detail === 'source-module') return mk({ type: 'SYMBOL', id: ID.symbol(row.file, row.entry),
+        name: row.entry, data: { kind: 'source-module' } }, 'DEFINES')
       if (row.detail === 'policy') return mk({ type: 'AUTH_CHECK', id: ID.scoped('authcheck', row.file), name: row.entry, data: { kind: 'policy' } }, 'AUTHORIZED_BY')
       if (row.detail === 'model') return mk({ type: 'MODEL', id: ID.scoped('model', row.file), name: row.entry.replace(/\.rb$/, ''), data: { kind: 'model' } }, 'READS')
       return mk({ type: 'SERVICE', id: ID.scoped('service', row.file), name: row.entry, data: { kind: row.detail === 'finder' ? 'finder' : 'service' } }, 'USES_SERVICE')
@@ -217,11 +219,14 @@ function reconcileAndGate(g, { inventories, features, files = null }) {
   const feature_rows = terminal.MAPPED_TO_FEATURE || 0
   const infra_rows = terminal.SHARED_INFRASTRUCTURE || 0
   const gaps = []
+  const extraction = inventoryMeta(inventories)
   if (features.length === 0) gaps.push(
     files === 0 ? 'no source files found at this path — the directory is empty or points at the wrong place'
       : feature_rows > 0 ? `${feature_rows} inventory rows found but no features clustered (clustering gap)`
         : 'no features mapped — no language plugin matched this stack (unsupported or non-code repository)')
   if (unreconciled) gaps.push(`${unreconciled} inventory item(s) never reached a terminal reconciliation status`)
+  if (extraction.unrepresented_source_files > 0) gaps.push(`${extraction.unrepresented_source_files} source file(s) were not represented by any inventory row`)
+  if (extraction.universal_used) gaps.push(`generic structural extraction was required${extraction.matched_plugins.length ? ' for uncovered languages/modules' : ''}; feature semantics remain estimated until a stack-specific plugin or Lead verifies them`)
   const catchall = features.filter((f) => f.planning_method === 'coverage-catchall')
   if (catchall.length) {
     const rows = catchall.reduce((n, f) => n + f.rows.length, 0)
@@ -230,7 +235,7 @@ function reconcileAndGate(g, { inventories, features, files = null }) {
   const status = gaps.length === 0 ? 'COMPLETE' : 'COMPLETE_WITH_GAPS'
   return {
     coverage: { feature_count: features.length, mapped: features.length, infra: infra_rows, feature_rows, infra_rows,
-      reconciled, total_rows: totalRows, plugin_matched: reconciled > 0, terminal },
+      reconciled, total_rows: totalRows, plugin_matched: extraction.matched_plugins.length > 0, extraction, terminal },
     gate: { status, gaps },
   }
 }
@@ -259,7 +264,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   const inventories = extractInventories({ sourceRoot: src, profile })
   const invCounts = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, (inventories[k] || []).length]))
   const invTotal = Object.values(invCounts).reduce((a, b) => a + b, 0)
-  const inventoryFingerprint = crypto.createHash('sha256').update(JSON.stringify(inventories)).digest('hex')
+  const inventoryFingerprint = crypto.createHash('sha256').update(`${INVENTORY_EXTRACTOR_VERSION}\n${JSON.stringify(inventories)}`).digest('hex')
   onProgress({ kind: 'inventories', label: `Extracted ${invTotal} inventory items across 11 lists`, counts: invCounts, total: invTotal })
   onPhase({ phase: 'planning', label: 'Lead consolidating semantic features' })
   const previousPublication = latestPublished(dataRoot, projectId)?.publication || null

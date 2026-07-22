@@ -75,12 +75,13 @@ test('all 11 inventories are always produced and written to disk with a manifest
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(out, { recursive: true, force: true })
 })
 
-test('a non-matching repo yields 11 empty inventories, never a crash', () => {
+test('an unfamiliar single-file repo is still represented, never silently empty', () => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-inv-empty-'))
   fs.writeFileSync(path.join(d, 'main.go'), 'package main\nfunc main() {}\n')
   const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d), registry: builtinRegistry() })
   assert.equal(Object.keys(inv).length, 11)
-  assert.ok(INVENTORY_KEYS.every((k) => Array.isArray(inv[k]) && inv[k].length === 0), 'no Rails plugin match → all empty')
+  assert.ok(INVENTORY_KEYS.every((k) => Array.isArray(inv[k])), 'all canonical inventories exist')
+  assert.ok(inv.services_finders_policies.some((r) => r.file === 'main.go' && r.detail === 'source-module'), 'unknown source remains mapped')
   fs.rmSync(d, { recursive: true, force: true })
 })
 
@@ -99,6 +100,27 @@ test('universal fallback maps a PHP (Nextcloud/Laravel-style) repo', () => {
   assert.ok(featureRows(inv) > 0, 'PHP repo produces feature-bearing rows')
   assert.ok(inv.routes_endpoints.some(r => r.plugin === 'universal'), 'via the universal fallback')
   assert.ok(inv.services_finders_policies.some(r => r.detail === 'service'))
+  fs.rmSync(d, { recursive: true, force: true })
+})
+
+test('universal fallback parses real Nextcloud route arrays and OpenAPI operations', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-nextcloud-'))
+  write(d, 'composer.json', '{"name":"nextcloud/server"}')
+  write(d, 'apps/files/appinfo/routes.php', `<?php
+return ['routes' => [
+  ['name' => 'page#index', 'url' => '/files', 'verb' => 'GET'],
+], 'ocs' => [
+  ['name' => 'api#share', 'url' => '/api/v1/shares', 'verb' => 'POST'],
+]];
+`)
+  write(d, 'apps/files/openapi.json', JSON.stringify({ openapi: '3.0.0', info: { title: 'Files API' }, paths: {
+    '/files/{id}': { get: { operationId: 'getFile', summary: 'Get file', security: [{ bearer: [] }] } },
+  } }, null, 2))
+  write(d, 'apps/files/lib/Controller/ApiController.php', '<?php class ApiController {}')
+  const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d) })
+  assert.ok(inv.routes_endpoints.some((r) => r.path === '/index.php/apps/files/files' && r.method === 'GET'), 'web route parsed with app prefix')
+  assert.ok(inv.rest_api.some((r) => r.path === '/ocs/v2.php/apps/files/api/v1/shares' && r.method === 'POST'), 'OCS route parsed as REST with app prefix')
+  assert.ok(inv.rest_api.some((r) => r.path === '/files/{id}' && r.handler === 'getFile'), 'OpenAPI operation parsed')
   fs.rmSync(d, { recursive: true, force: true })
 })
 
@@ -135,5 +157,14 @@ test('a Rails repo still uses the precise Rails plugin, not the universal fallba
   const dir = railsFixture()
   const inv = extractInventories({ sourceRoot: dir, profile: profileRepo(dir) })
   assert.ok(inv.routes_endpoints.length > 0 && inv.routes_endpoints.every(r => r.plugin === 'rails'), 'Rails precision preserved')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('a polyglot Rails repository also maps uncovered non-Ruby modules', () => {
+  const dir = railsFixture()
+  write(dir, 'services/account-api/src/routes/users.ts', "router.get('/api/users', handler)\n")
+  const inv = extractInventories({ sourceRoot: dir, profile: profileRepo(dir) })
+  assert.ok(inv.routes_endpoints.some((r) => r.plugin === 'rails'), 'Rails precision preserved')
+  assert.ok(inv.rest_api.some((r) => r.plugin === 'universal' && r.file.endsWith('users.ts')), 'uncovered TypeScript API mapped')
   fs.rmSync(dir, { recursive: true, force: true })
 })

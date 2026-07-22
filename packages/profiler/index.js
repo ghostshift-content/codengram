@@ -70,7 +70,7 @@ const MANIFESTS = [
   { file: 'go.mod', lang: 'Go', fw: [[/gin-gonic/i, 'Gin'], [/labstack\/echo/i, 'Echo'], [/gofiber/i, 'Fiber']] },
   { file: 'pom.xml', lang: 'Java', fw: [[/spring-boot/i, 'Spring Boot'], [/spring-web/i, 'Spring']] },
   { file: 'build.gradle', lang: 'Java/Kotlin', fw: [[/spring/i, 'Spring'], [/ktor/i, 'Ktor']] },
-  { file: 'composer.json', lang: 'PHP', fw: [[/laravel/i, 'Laravel'], [/symfony/i, 'Symfony']] },
+  { file: 'composer.json', lang: 'PHP', fw: [[/"name"\s*:\s*"nextcloud\/server"|nextcloud\/ocp|nextcloud\/server/i, 'Nextcloud'], [/laravel/i, 'Laravel'], [/symfony/i, 'Symfony']] },
   { file: 'Cargo.toml', lang: 'Rust', fw: [[/axum/i, 'Axum'], [/actix/i, 'Actix'], [/rocket/i, 'Rocket']] },
   { file: 'mix.exs', lang: 'Elixir', fw: [[/phoenix/i, 'Phoenix']] },
 ]
@@ -107,6 +107,9 @@ export function profileRepo(root, opts = {}) {
   inferLang('.rb', 'Ruby'); inferLang('.py', 'Python'); inferLang('.go', 'Go'); inferLang('.php', 'PHP')
   const railsLayout = entry_points.some((e) => /(^|\/)config\/routes\.rb$/.test(e)) || top_directories.some((d) => d.dir === 'app')
   if (byExt.has('.rb') && railsLayout && !stack.frameworks.includes('Rails')) stack.frameworks.push('Rails')
+  const nextcloudLayout = files.some((f) => /(^|\/)core\/routes\.php$/i.test(f.path)) &&
+    files.some((f) => /(^|\/)lib\/(?:private|public)\//i.test(f.path)) && top_directories.some((d) => d.dir === 'apps')
+  if (byExt.has('.php') && nextcloudLayout && !stack.frameworks.includes('Nextcloud')) stack.frameworks.push('Nextcloud')
   // §1: default to a 200K model (never assume 1M). The 1M window is opt-in via opts.context1m or a [1m] model id.
   const model = opts.model || 'claude-sonnet-4'
   const model_context = modelContext(model, { context1m: opts.context1m })

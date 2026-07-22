@@ -54,7 +54,13 @@ const RULES = [
 ]
 
 const titleize = (s) => String(s).replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-const singular = (s) => s.length > 3 && s.endsWith('s') && !s.endsWith('ss') ? s.slice(0, -1) : s
+const singular = (s) => {
+  const value = String(s || '')
+  if (/(?:status|news|analysis|basis|series|species)$/i.test(value)) return value
+  if (value.length > 4 && /ies$/i.test(value)) return value.slice(0, -3) + 'y'
+  if (value.length > 4 && /(?:ches|shes|xes|zes)$/i.test(value)) return value.slice(0, -2)
+  return value.length > 3 && /s$/i.test(value) && !/(?:ss|us|is)$/i.test(value) ? value.slice(0, -1) : value
+}
 const strip = /_(controller|service|finder|policy|worker|job|type|serializer|presenter|resolver|mutation|ability|spec|test)$/
 const stripVerb = /^(create|update|delete|destroy|list|show|new|edit|fetch|get|build|generate|bulk)_/
 
@@ -76,8 +82,11 @@ function moduleCluster(row) {
   const segs = String(row.file || '').split('/').filter(Boolean); segs.pop()   // drop the filename
   let mod = segs.find((s) => !GENERIC_SEG.test(s) && !s.includes('.'))
   if (!mod) mod = [...segs].reverse().find((s) => !GENERIC_SEG.test(s) && !s.includes('.')) || 'core'  // all-structural → 'core'
-  mod = slug(mod) || 'core'
-  return { domain: 'core', slug: mod, name: titleize(mod) }
+  mod = singular(slug(mod) || 'core')
+  const file = String(row.file || '')
+  const domain = /^(?:apps|plugins|extensions)\//i.test(file) ? 'applications'
+    : /^(?:packages|modules|services|bundles)\//i.test(file) ? 'modules' : 'core'
+  return { domain, slug: mod, name: titleize(mod) }
 }
 function fallbackKey(row) {
   const file = String(row.file || '')
@@ -124,7 +133,11 @@ export function deterministicSemanticPlan(inventories, { taxonomyThreshold = 80,
   const ruleMatch = rows.map((w) => matchRule(w.row))
   const fit = rows.length ? ruleMatch.filter(Boolean).length / rows.length : 0
   const bigRepo = rows.length >= taxonomyThreshold
-  const useTaxonomy = bigRepo && fit >= taxonomyFit
+  // RULES is a curated product taxonomy, not a universal ontology. Generic rows often contain words such as user,
+  // file, project and search, which can make an unrelated codebase look like GitLab. Only select the taxonomy when
+  // most evidence came from precise stack plugins; universal repositories stay grouped by their own module layout.
+  const preciseRatio = rows.length ? rows.filter((w) => w.row.plugin && w.row.plugin !== 'universal').length / rows.length : 0
+  const useTaxonomy = bigRepo && preciseRatio >= 0.6 && fit >= taxonomyFit
   const features = new Map()
   rows.forEach((wrapped, i) => {
     // 3 strategies: small repo → noun cohesion (precise); big + fits taxonomy → named capabilities (GitLab-style);

@@ -108,15 +108,16 @@ test('a technical REST surface also links endpoints to their business capability
   assert.ok(linked, 'business feature receives a secondary EXPOSES edge to its REST endpoint')
 })
 
-test('#2 an unsupported stack (no plugin match) reports COMPLETE_WITH_GAPS, never a false COMPLETE', async () => {
+test('#2 an unsupported stack maps its source but reports generic semantics as a gap', async () => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unsup-'))
   fs.writeFileSync(path.join(d, 'main.go'), 'package main\nfunc main(){}\n')
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unsup-data-'))
   const project = createProject(dataRoot, d)
   const res = await scanSnapshot(dataRoot, project.id, { agentic: false, render: (db, out) => renderPhase1Maps(db, out, {}) })
-  assert.equal(res.coverage.feature_count, 0)
+  assert.ok(res.coverage.feature_count > 0)
   assert.equal(res.gate.status, 'COMPLETE_WITH_GAPS')
-  assert.ok(res.gate.gaps.some((g) => /no language plugin matched/.test(g)))
+  assert.ok(res.gate.gaps.some((g) => /generic structural extraction/.test(g)))
+  assert.equal(res.coverage.extraction.unrepresented_source_files, 0)
   fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 

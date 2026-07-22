@@ -58,6 +58,27 @@ const singular = (s) => s.length > 3 && s.endsWith('s') && !s.endsWith('ss') ? s
 const strip = /_(controller|service|finder|policy|worker|job|type|serializer|presenter|resolver|mutation|ability|spec|test)$/
 const stripVerb = /^(create|update|delete|destroy|list|show|new|edit|fetch|get|build|generate|bulk)_/
 
+// The module/domain a file belongs to — works across ecosystems (Rails app/<domain>, Nextcloud apps/<name>,
+// monorepo packages/<pkg>, Go cmd/<x>, Django <app>/, src/<module>, …). Falls back to the top directory, then 'core'.
+function moduleOf(file) {
+  const generic = /^(controllers?|services?|models?|views?|helpers?|utils?|lib|libs|src|common|core|main|index|tests?|spec|dist|private|shared|internal|handlers?|routes?|api|app)$/i
+  const m = file.match(/(?:^|\/)(?:apps|packages|services|modules|features|domains?|bundles|plugins)\/([^/]+)\//i)  // Nextcloud/monorepo/DDD modules
+  if (m && m[1] && !generic.test(m[1])) return slug(m[1])
+  const rails = file.match(/(?:app|lib)\/(?:controllers|services|finders|policies|workers|graphql)\/([^/]+)\/[^/]+$/)?.[1]  // Rails controller namespace
+  if (rails && !generic.test(rails)) return slug(rails)
+  return 'core'   // structural roots (app/, config/, src/, lib/…) cluster under one domain, grouped by capability noun
+}
+// For a LARGE, generic (non-taxonomy) repo, a feature = a module directory. Pick the first meaningful path segment
+// (skipping framework-structural roots), so `apps/files/…`, `lib/private/Files/…` etc. all collapse to one "Files"
+// feature — tens of real modules, not thousands of one-file features.
+const GENERIC_SEG = /^(controllers?|services?|models?|views?|helpers?|utils?|util|lib|libs|src|source|common|core|main|index|tests?|spec|specs|dist|build|private|public|shared|internal|handlers?|routes?|route|api|app|apps|packages|package|bundle|bundles|vendor|includes?|inc|classes?|class|modules?|component|components|pkg|cmd|domain|domains|feature|features|3rdparty|node_modules)$/i
+function moduleCluster(row) {
+  const segs = String(row.file || '').split('/').filter(Boolean); segs.pop()   // drop the filename
+  let mod = segs.find((s) => !GENERIC_SEG.test(s) && !s.includes('.'))
+  if (!mod) mod = [...segs].reverse().find((s) => !GENERIC_SEG.test(s) && !s.includes('.')) || 'core'  // all-structural → 'core'
+  mod = slug(mod) || 'core'
+  return { domain: 'core', slug: mod, name: titleize(mod) }
+}
 function fallbackKey(row) {
   const file = String(row.file || '')
   const entry = String(row.entry || '')
@@ -65,9 +86,7 @@ function fallbackKey(row) {
   const routePath = entry.match(/(?:get|post|put|patch|delete|match)\s+['"]\/?([^/'"]+)/i)?.[1]
   let noun = resource || routePath || file.split('/').pop()?.replace(/\.[^.]+$/, '') || 'misc'
   noun = singular(slug(noun.replace(strip, '').replace(stripVerb, ''))) || 'misc'
-  const root = file.match(/(?:app|lib)\/(?:controllers|services|finders|policies|workers|graphql)\/([^/]+)\/[^/]+$/)?.[1]
-  const domain = root ? slug(root) : 'core'
-  return { domain, slug: noun, name: titleize(noun) }
+  return { domain: moduleOf(file), slug: noun, name: titleize(noun) }
 }
 
 function matchRule(row) {
@@ -97,21 +116,30 @@ export function inventoryRows(inventories) {
   return rows
 }
 
-export function deterministicSemanticPlan(inventories, { taxonomyThreshold = 80 } = {}) {
+export function deterministicSemanticPlan(inventories, { taxonomyThreshold = 80, taxonomyFit = 0.6 } = {}) {
   const rows = inventoryRows(inventories)
-  const useTaxonomy = rows.length >= taxonomyThreshold
+  // The named taxonomy is domain-specific (GitLab-tuned). Its keywords (user/admin/upload/search/…) match loosely, so
+  // applied blindly it MISLABELS other apps (Nextcloud, Django, …) with GitLab feature names. Only use it when the repo
+  // genuinely FITS — a high fraction of rows match a rule. Otherwise cluster GENERICALLY by module (works for any stack).
+  const ruleMatch = rows.map((w) => matchRule(w.row))
+  const fit = rows.length ? ruleMatch.filter(Boolean).length / rows.length : 0
+  const bigRepo = rows.length >= taxonomyThreshold
+  const useTaxonomy = bigRepo && fit >= taxonomyFit
   const features = new Map()
-  for (const wrapped of rows) {
-    const matched = useTaxonomy ? matchRule(wrapped.row) : null
+  rows.forEach((wrapped, i) => {
+    // 3 strategies: small repo → noun cohesion (precise); big + fits taxonomy → named capabilities (GitLab-style);
+    // big + generic → MODULE/directory clustering, so a large flat codebase yields tens of modules, not one-per-file.
+    const matched = useTaxonomy ? ruleMatch[i] : null
     const selected = matched || (useTaxonomy
       ? { domain: 'platform', slug: 'supporting-capabilities', name: 'Supporting Application Capabilities', score: 0 }
-      : fallbackKey(wrapped.row))
-    const key = useTaxonomy ? `${selected.domain}/${selected.slug}` : selected.slug
+      : bigRepo ? moduleCluster(wrapped.row) : fallbackKey(wrapped.row))
+    const method = useTaxonomy ? (matched ? 'semantic-taxonomy' : 'coverage-catchall') : bigRepo ? 'module-cohesion' : 'local-cohesion'
+    const key = useTaxonomy ? `${selected.domain}/${selected.slug}` : bigRepo ? `mod/${selected.slug}` : selected.slug
     if (!features.has(key)) features.set(key, { slug: selected.slug, domain: selected.domain, name: selected.name, rows: [],
-      confidence: matched ? 'medium' : 'low', planning_method: useTaxonomy ? (matched ? 'semantic-taxonomy' : 'coverage-catchall') : 'local-cohesion' })
-    else if (!useTaxonomy && features.get(key).domain === 'core' && selected.domain !== 'core') features.get(key).domain = selected.domain
+      confidence: matched ? 'medium' : 'low', planning_method: method })
+    else if (!useTaxonomy && !bigRepo && features.get(key).domain === 'core' && selected.domain !== 'core') features.get(key).domain = selected.domain
     features.get(key).rows.push({ kind: wrapped.kind, row: wrapped.row })
-  }
+  })
   return [...features.values()].sort((a, b) => a.domain.localeCompare(b.domain) || a.slug.localeCompare(b.slug))
 }
 

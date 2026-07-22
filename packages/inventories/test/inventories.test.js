@@ -83,3 +83,57 @@ test('a non-matching repo yields 11 empty inventories, never a crash', () => {
   assert.ok(INVENTORY_KEYS.every((k) => Array.isArray(inv[k]) && inv[k].length === 0), 'no Rails plugin match → all empty')
   fs.rmSync(d, { recursive: true, force: true })
 })
+
+// ── universal polyglot fallback: any language should map ─────────────────────────────────────
+function write(dir, rel, body) { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body) }
+const featureRows = (inv) => ['routes_endpoints','rest_api','graphql','workers_jobs','services_finders_policies','response_shaping','tokens_actors'].reduce((s,k)=>s+(inv[k]||[]).length,0)
+
+test('universal fallback maps a PHP (Nextcloud/Laravel-style) repo', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-php-'))
+  write(d, 'composer.json', '{"name":"acme/app"}')
+  write(d, 'apps/files/lib/Controller/ApiController.php', "<?php\nclass ApiController {\n  #[ApiRoute(verb: 'GET', url: '/files')]\n  public function index() {}\n}\n")
+  write(d, 'apps/files/lib/Service/FileService.php', '<?php\nclass FileService {}\n')
+  write(d, 'apps/dav/lib/Controller/CalendarController.php', "<?php\nRoute::get('/dav/calendars', 'x');\n")
+  write(d, 'lib/private/Authentication/LoginController.php', '<?php\nclass LoginController { function login(){ authenticate_user(); } }\n')
+  const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d) })
+  assert.ok(featureRows(inv) > 0, 'PHP repo produces feature-bearing rows')
+  assert.ok(inv.routes_endpoints.some(r => r.plugin === 'universal'), 'via the universal fallback')
+  assert.ok(inv.services_finders_policies.some(r => r.detail === 'service'))
+  fs.rmSync(d, { recursive: true, force: true })
+})
+
+test('universal fallback maps a JS/TS (Express/Nest) repo', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-js-'))
+  write(d, 'package.json', '{"name":"x"}')
+  write(d, 'src/routes/users.js', "const router = require('express').Router()\nrouter.get('/users', (req,res)=>res.json({}))\nmodule.exports = router\n")
+  write(d, 'src/services/userService.ts', 'export class UserService {}\n')
+  write(d, 'src/jobs/emailWorker.ts', 'export class EmailWorker {}\n')
+  const inv = extractInventories({ sourceRoot: d, profile: profileRepo(d) })
+  assert.ok(inv.routes_endpoints.length > 0 && inv.services_finders_policies.length > 0 && inv.workers_jobs.length > 0)
+  fs.rmSync(d, { recursive: true, force: true })
+})
+
+test('universal fallback maps a Python (FastAPI/Django) and a Go repo', () => {
+  const py = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-py-'))
+  write(py, 'requirements.txt', 'fastapi\n')
+  write(py, 'app/api/routes.py', "from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/items')\ndef items(): ...\n")
+  write(py, 'app/services/item_service.py', 'class ItemService: ...\n')
+  const pin = extractInventories({ sourceRoot: py, profile: profileRepo(py) })
+  assert.ok(featureRows(pin) > 0, 'Python maps')
+  fs.rmSync(py, { recursive: true, force: true })
+
+  const go = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-go-'))
+  write(go, 'go.mod', 'module x\n')
+  write(go, 'internal/handlers/user.go', 'package handlers\nfunc Register(r *mux.Router){ r.HandleFunc("/users", h) }\n')
+  write(go, 'internal/services/user_service.go', 'package services\ntype UserService struct{}\n')
+  const gin = extractInventories({ sourceRoot: go, profile: profileRepo(go) })
+  assert.ok(featureRows(gin) > 0, 'Go maps')
+  fs.rmSync(go, { recursive: true, force: true })
+})
+
+test('a Rails repo still uses the precise Rails plugin, not the universal fallback', () => {
+  const dir = railsFixture()
+  const inv = extractInventories({ sourceRoot: dir, profile: profileRepo(dir) })
+  assert.ok(inv.routes_endpoints.length > 0 && inv.routes_endpoints.every(r => r.plugin === 'rails'), 'Rails precision preserved')
+  fs.rmSync(dir, { recursive: true, force: true })
+})

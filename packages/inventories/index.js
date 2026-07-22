@@ -8,7 +8,7 @@ import path from 'node:path'
 import { INVENTORY_KEYS, Registry, definePlugin } from '../plugins/index.js'
 
 // ── extraction context over a frozen source tree ───────────────────────────────────────────────
-const SKIP_DIR = new Set(['node_modules', '.git', 'vendor', 'dist', 'build', 'coverage', 'tmp', 'log', 'logs', 'target'])
+const SKIP_DIR = new Set(['node_modules', '.git', 'vendor', '3rdparty', 'dist', 'build', 'coverage', 'tmp', 'log', 'logs', 'target', 'cypress', '__tests__', '__mocks__'])
 function listFiles(root, base = root, out = []) {
   let entries; try { entries = fs.readdirSync(root, { withFileTypes: true }) } catch { return out }
   for (const e of entries) {
@@ -211,22 +211,61 @@ export const railsPlugin = definePlugin({
 
 export function builtinRegistry() { return new Registry().register(railsPlugin) }
 
+// ── universal polyglot extractor (fallback for ANY language) ────────────────────────────────────
+// Language-specific plugins (Rails) give the most precise map. When none matches the stack, this fallback still
+// produces a real, cited map for ANY language using (a) fast path/name role heuristics — which framework a file plays
+// (controller, service, model, job, auth) is encoded in its path/name across almost every ecosystem — and (b) a few
+// broad cross-framework CONTENT patterns for route/auth definitions. Not as sharp as a hand-tuned plugin, but it means
+// PHP / Java / JS / TS / Python / Go / Rust / … all map instead of returning zero features.
+const CODE_EXT = /\.(js|jsx|ts|tsx|mjs|cjs|php|py|rb|go|java|kt|kts|rs|ex|exs|cs|scala|swift|vue|svelte|c|cc|cpp|h|hpp|clj|pl|pm|groovy|dart)$/i
+const ROUTE_DEF = /\b(?:(?:app|router|route|api|bp|blueprint|srv|mux|group|http|r|Router|Route)\s*\.\s*(?:get|post|put|patch|delete|options|head|use|all|route|handle|handlefunc|match|any|resource|apiresource|add_route|add_url_rule)\s*\()|@(?:Get|Post|Put|Patch|Delete|Request|Api|Web)Mapping\b|@(?:app|router|blueprint|bp)\.(?:get|post|put|patch|delete|route)\b|Route::(?:get|post|put|patch|delete|any|match|resource|apiResource|group)\s*\(|#\[(?:Route|ApiRoute|FrontpageRoute|Get|Post|Put|Delete|Patch)\b|@(?:Path|GET|POST|PUT|DELETE|PATCH)\b|\b(?:path|re_path|url)\s*\(\s*[rf]?['"]|http\.HandleFunc\s*\(/i
+const AUTH_DEF = /@PreAuthorize|@Secured|IsGranted|requireLogin|ensureLoggedIn|authenticate[_(]|current_user\b|getUser\(|@login_required|checkPermission|authorize[!(]|before_action[^,\n]*auth|passport\.|jwt\.verify|verifyToken|Auth::(?:check|user|guard)/i
+// role of a file from its path/name — works across ecosystems (Rails, Laravel, Symfony, Nest, Spring, Django, …)
+const ROLE = [
+  ['services_finders_policies', /(?:^|\/)(?:policies|policy|guards?|abilities)(?:\/|$)|(?:Policy|Guard|Ability|Voter)\.\w+$/i, 'policy'],
+  ['services_finders_policies', /(?:^|\/)(?:services?|usecases?|use_cases?|interactors?|managers?|providers?|repositor(?:y|ies)|finders?|handlers?)(?:\/|$)|(?:Service|UseCase|Interactor|Manager|Provider|Repository|Finder|Handler)\.\w+$/i, 'service'],
+  ['services_finders_policies', /(?:^|\/)(?:models?|entit(?:y|ies)|domain\/models?|schemas?)(?:\/|$)|(?:Model|Entity)\.\w+$/i, 'model'],
+  ['workers_jobs', /(?:^|\/)(?:jobs?|workers?|tasks?|queues?|consumers?|cron|schedulers?|commands?)(?:\/|$)|(?:Job|Worker|Task|Consumer|Cron|Scheduler|Command)\.\w+$/i, 'worker'],
+  ['response_shaping', /(?:^|\/)(?:serializers?|transformers?|presenters?|resources?|views?|dtos?)(?:\/|$)|(?:Serializer|Transformer|Presenter|Resource|View|Dto|Response)\.\w+$/i, 'serializer'],
+  ['routes_endpoints', /(?:^|\/)(?:controllers?|handlers?|routes?|endpoints?|api|resources?|views?)(?:\/|$)|(?:Controller|Handler|Endpoint|Resource|Api)\.\w+$/i, 'handler'],
+  ['tokens_actors', /(?:^|\/)(?:auth|authentication|security|middlewares?|guards?|permissions?|identity)(?:\/|$)/i, 'auth'],
+  ['datastores_integrations', /(?:^|\/)(?:migrations?|db|database|integrations?|clients?|gateways?|adapters?)(?:\/|$)|schema\.prisma$|knexfile|\.sql$|database\.(?:yml|php|json)$/i, 'integration'],
+  ['processes_ipc', /(?:^Procfile$|(?:^|\/)Dockerfile$|docker-compose|(?:^|\/)Makefile$|(?:^|\/)cmd\/[^/]+\/main\.|(?:^|\/)bin\/)/i, 'process'],
+]
+export function universalInventory(ctx) {
+  const out = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, []]))
+  // (a) content: explicit route + auth definitions (scoped to code files for speed)
+  for (const h of ctx.grep(ROUTE_DEF, { nameRe: CODE_EXT })) out.routes_endpoints.push(item(h, h.text.slice(0, 90), 'route'))
+  for (const h of ctx.grep(AUTH_DEF, { nameRe: CODE_EXT })) out.tokens_actors.push(item(h, h.text.slice(0, 90), 'auth'))
+  // (b) file-role heuristics (fast, language-agnostic) — one representative row per meaningful file
+  for (const f of ctx.files) {
+    if (!CODE_EXT.test(f.name) && !ROLE[8][1].test(f.path)) continue    // code file, or a process/infra file
+    for (const [kind, re, detail] of ROLE) {
+      if (re.test(f.path) || re.test(f.name)) { out[kind].push({ file: f.path, line: 1, entry: f.name, detail }); break }
+    }
+  }
+  return out
+}
+
 // ── engine ───────────────────────────────────────────────────────────────────────────────────
-// Merge every matching plugin's 11 lists; dedup identical file:line:entry rows.
+// Merge every matching plugin's 11 lists; dedup identical file:line:entry rows. If the language-specific plugins
+// produced NO feature-bearing rows (an unsupported stack), fall back to the universal polyglot extractor so any
+// language still maps instead of returning zero features.
+const FEATURE_KINDS = ['routes_endpoints', 'rest_api', 'graphql', 'workers_jobs', 'services_finders_policies', 'response_shaping', 'tokens_actors', 'downloads_uploads_exports', 'search_aggregation']
 export function extractInventories({ sourceRoot, profile, registry = builtinRegistry() }) {
   const ctx = buildContext(sourceRoot)
   const merged = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, []]))
   const seen = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, new Set()]))
-  for (const plugin of registry.match(profile)) {
-    const inv = plugin.inventory(ctx) || {}
-    for (const key of INVENTORY_KEYS) {
-      for (const it of inv[key] || []) {
-        const sig = `${it.file}:${it.line}:${it.entry}`
-        if (seen[key].has(sig)) continue
-        seen[key].add(sig); merged[key].push({ ...it, plugin: plugin.id })
-      }
+  const absorb = (inv, pluginId) => {
+    for (const key of INVENTORY_KEYS) for (const it of inv[key] || []) {
+      const sig = `${it.file}:${it.line}:${it.entry}`
+      if (seen[key].has(sig)) continue
+      seen[key].add(sig); merged[key].push({ ...it, plugin: pluginId })
     }
   }
+  for (const plugin of registry.match(profile)) absorb(plugin.inventory(ctx) || {}, plugin.id)
+  const featureRows = FEATURE_KINDS.reduce((s, k) => s + merged[k].length, 0)
+  if (featureRows === 0) absorb(universalInventory(ctx), 'universal')   // unsupported stack → universal fallback
   for (const key of INVENTORY_KEYS) merged[key].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
   return merged
 }

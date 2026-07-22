@@ -13,8 +13,6 @@ Codengram reads a repository and turns it into a **map of the system**: every fe
 
 </div>
 
-<p align="center"><img src="./docs/images/codengram-features.png" alt="Codengram — features mapped from source, each traced to file:line" width="860"></p>
-
 > **Recon only.** Codengram maps *structure and understanding* — who exposes what, which auth checks exist, where data flows, which features share code. It **never** claims a vulnerability, exploit, or severity. What you do with the map is up to you.
 
 ---
@@ -90,9 +88,21 @@ Use it for:
 
 ## A look inside
 
-| Neural map | Interfaces | Coverage |
-|---|---|---|
-| ![Brain](./docs/images/codengram-brain.png) | ![Interfaces](./docs/images/codengram-interfaces.png) | ![Coverage](./docs/images/codengram-coverage.png) |
+**Features** — every capability mapped from source, each traced to `file:line`
+
+<p align="center"><img src="./docs/images/codengram-features.png" alt="Features mapped from source" width="880"></p>
+
+**The map** — features, domains, and how they connect
+
+<p align="center"><img src="./docs/images/codengram-brain.png" alt="The code map — features and their connections" width="880"></p>
+
+**Interfaces** — REST routes, GraphQL operations, and background jobs
+
+<p align="center"><img src="./docs/images/codengram-interfaces.png" alt="Interfaces — routes, GraphQL, jobs" width="880"></p>
+
+**Coverage** — per-item reconciliation and the completion gate
+
+<p align="center"><img src="./docs/images/codengram-coverage.png" alt="Coverage — per-item reconciliation" width="880"></p>
 
 ---
 

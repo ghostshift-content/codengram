@@ -24,11 +24,14 @@ Codengram reads a repository and turns it into a **map of the system**: every fe
 Needs **Node ≥ 22** (uses Node's built-in SQLite — no native build). That's it.
 
 ```bash
-git clone https://github.com/<you>/codengram.git && cd codengram
+git clone https://github.com/ghostshift-content/codengram.git && cd codengram
 npm install
 
+npm run doctor        # check your environment (Node, SQLite, data dir, port, Claude)
 npm run serve         # open the UI  →  http://127.0.0.1:4173
 ```
+
+`doctor` prints a clear ✓ / ⚠ / ✗ report and tells you how to fix anything that's off. **`serve` and `scan` run this preflight automatically** and refuse to start if something's broken — so problems show up front, never mid-run.
 
 In the UI: paste a **local repository path** → **Recon** → watch it map, then explore **Features → Interfaces → Authorization → Data Flows → Coverage**, and **Ask** questions with cited answers.
 
@@ -39,7 +42,11 @@ npm run scan -- /path/to/your/repo     # map a repo → writes a portable bundle
 node apps/cli/bin/codengram.js ls      # list mapped projects
 ```
 
-**AI is optional.** Everything runs **deterministically** with no AI. To enable Claude-backed answers, install [Claude Code](https://claude.ai/code) and run `claude` once to log in — Codengram uses your existing subscription and **never handles credentials**. Without it, `Ask` and the mapping still work, just with structure-derived text instead of model reasoning.
+**AI is optional.** Everything runs **deterministically** with no AI. To enable Claude-backed answers, install [Claude Code](https://claude.ai/code) and run `claude` once to log in — Codengram uses your existing subscription and **never handles credentials**. Without it, `Ask` and the mapping still work, just with structure-derived text instead of model reasoning. Check your login any time with:
+
+```bash
+npm run doctor -- --probe              # also verifies your Claude subscription session
+```
 
 ---
 

@@ -38,6 +38,11 @@ test('clustering collapses related rows into one capability (singularized noun)'
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
+// Test seam: a fake Claude Lead so the SEMANTIC path is exercised without the real Agent SDK. Returns a plan the
+// validator can ground against the fixture's rows (broad include_paths capture every app/lib/config row into one feature).
+const fakeLead = (features) => async () => ({ plan: { features }, sessionId: 'session:test-lead', model: 'claude-test' })
+const railsLead = fakeLead([{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity', purpose: '', include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user', 'issue', 'api'] }])
+
 test('buildGraph produces a connected, provenance-backed brain with SHARES edges', () => {
   const dir = railsFixture()
   const profile = profileRepo(dir)
@@ -62,12 +67,14 @@ test('scanSnapshot runs the full pipeline and atomically publishes with a missio
   const dir = railsFixture()
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-data-'))
   const project = createProject(dataRoot, dir)
-  const res = await scanSnapshot(dataRoot, project.id, { agentic: false, render: (db, out) => renderPhase1Maps(db, out, {}) })
+  const res = await scanSnapshot(dataRoot, project.id, { planLead: railsLead, render: (db, out) => renderPhase1Maps(db, out, {}) })
   assert.ok(res.snapshotId.startsWith('snapshot:') && res.missionId.startsWith('mission:'))
   assert.ok(res.graph.nodes > 5 && res.graph.edges > 3 && res.graph.claims > 0)
   assert.equal(res.gate.status, 'COMPLETE')
   assert.equal(res.publication.state, 'COMPLETE')   // schema-aligned gate status, not a non-schema 'PUBLISHED'
-  assert.ok(res.publication.published)
+  assert.equal(res.publication.executed_planner, 'agent-lead')       // semantic path via the (injected) Lead
+  assert.equal(res.publication.semantic_coverage > 0, true)
+  assert.ok(res.coverage.feature_count > 0 && res.publication.published)
   const pub = latestPublished(dataRoot, project.id)
   assert.equal(pub.publication.mission_id, res.missionId)
   // the sealed snapshot's CURRENT points at publications/<pubId>/{index.sqlite, phase1-maps}; no leftover .attempt
@@ -90,7 +97,7 @@ test('a semantic catch-all is covered but remains an explicit completion gap', (
   const res = buildGraph(g, { project: { id: ID.project(dir), name: 'demo' }, snapshot: { id: ID.snapshot('catchall'), file_count: profile.files }, profile,
     inventories: inv, featurePlan: [{ domain: 'platform', slug: 'supporting-capabilities', name: 'Supporting Capabilities', rows, planning_method: 'coverage-catchall' }] })
   assert.equal(res.gate.status, 'COMPLETE_WITH_GAPS')
-  assert.ok(res.gate.gaps.some((x) => /semantic consolidation/.test(x)))
+  assert.ok(res.gate.gaps.some((x) => /semantics remain estimated/.test(x)))
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -137,16 +144,26 @@ test('an endpoint whose handler references another feature\'s class is cross-lin
   assert.ok(!noise, 'a generated spec (openapi.json) referencing the class does not create a false cross-link')
 })
 
-test('#2 an unsupported stack maps its source but reports generic semantics as a gap', async () => {
+test('FAIL-CLOSED: with no Claude Lead, a scan publishes technical architecture only — never folder clusters as features', async () => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unsup-'))
   fs.writeFileSync(path.join(d, 'main.go'), 'package main\nfunc main(){}\n')
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-unsup-data-'))
   const project = createProject(dataRoot, d)
   const res = await scanSnapshot(dataRoot, project.id, { agentic: false, render: (db, out) => renderPhase1Maps(db, out, {}) })
-  assert.ok(res.coverage.feature_count > 0)
-  assert.equal(res.gate.status, 'COMPLETE_WITH_GAPS')
-  assert.ok(res.gate.gaps.some((g) => /generic structural extraction/.test(g)))
-  assert.equal(res.coverage.extraction.unrepresented_source_files, 0)
+  assert.equal(res.gate.status, 'SEMANTIC_PLANNING_BLOCKED')
+  assert.equal(res.publication.state, 'SEMANTIC_PLANNING_BLOCKED')
+  assert.equal(res.coverage.feature_count, 0, 'NO business features are published without Claude')
+  assert.equal(res.coverage.semantic_coverage, 0, 'never claims semantic coverage when blocked')
+  assert.ok(res.coverage.technical_clusters > 0, 'technical clusters are preserved as architecture')
+  assert.ok(res.gate.gaps.some((g) => /semantic planning blocked/i.test(g)))
+  assert.equal(res.publication.executed_planner, 'blocked')
+  assert.ok(res.publication.failure_reason && res.publication.fallback_reason)
+  // the published graph carries ARCH_CLUSTER nodes, and ZERO FEATURE / ROLE nodes (no meaning was derived)
+  const g = openGraph(latestPublished(dataRoot, project.id).indexPath)
+  assert.ok(nodesByType(g, 'ARCH_CLUSTER').length > 0)
+  assert.equal(nodesByType(g, 'FEATURE').length, 0)
+  assert.equal(nodesByType(g, 'ROLE').length, 0)
+  g.close()
   fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 
@@ -155,13 +172,13 @@ test('#3 re-scanning an older snapshot makes it current again (latest = most-rec
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-latest-'))
   const project = createProject(dataRoot, dir)
   const render = (db, out) => renderPhase1Maps(db, out, {})
-  const A = await scanSnapshot(dataRoot, project.id, { agentic: false, render })                        // snapshot A
+  const A = await scanSnapshot(dataRoot, project.id, { planLead: railsLead, render })                   // snapshot A
   fs.writeFileSync(path.join(dir, 'config', 'extra.rb'), 'class Extra; end\n')     // change source → snapshot B
-  const B = await scanSnapshot(dataRoot, project.id, { agentic: false, render })
+  const B = await scanSnapshot(dataRoot, project.id, { planLead: railsLead, render })
   assert.notEqual(A.snapshotId, B.snapshotId)
   assert.equal(latestPublished(dataRoot, project.id).snapshot.id, B.snapshotId)    // B is newest + latest-sealed
   fs.rmSync(path.join(dir, 'config', 'extra.rb'))                                  // revert → snapshot A again
-  const A2 = await scanSnapshot(dataRoot, project.id, { agentic: false, render })
+  const A2 = await scanSnapshot(dataRoot, project.id, { planLead: railsLead, render })
   assert.equal(A2.snapshotId, A.snapshotId, 'content-addressed: reverted source ⇒ same id as A')
   assert.equal(latestPublished(dataRoot, project.id).snapshot.id, A.snapshotId, 're-sealed A is now latest, not B')
   assert.equal(A2.publication.planner, 'sealed-plan-reuse', 'unchanged inventory reuses the sealed plan instead of drifting')

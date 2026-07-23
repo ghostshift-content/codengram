@@ -11,10 +11,10 @@ import { profileRepo } from '../profiler/index.js'
 import { extractInventories, inventoryMeta, INVENTORY_EXTRACTOR_VERSION } from '../inventories/index.js'
 import { INVENTORY_KEYS } from '../plugins/index.js'
 import { openGraph, upsertNode, upsertEdge, addClaim, addReconItem, reconCounts, reconTotal, mergeStaging, counts, nodesByType } from '../graph/index.js'
-import { ID, slug, safeRelPath } from '../schemas/index.js'
+import { ID, slug, safeRelPath, pipelineVersions, PROMPT_VERSION, PLANNER_VERSION, canEstablishIdentity } from '../schemas/index.js'
 import { createSnapshot, getProject, sourceRootDir, snapshotDir, listSnapshots } from '../ingestion/index.js'
 import { deterministicSemanticPlan, validateLeadPlan, semanticFeatureForRow } from './semantic-planner.js'
-import { planRecon } from '../claude-runtime/index.js'
+import { planRecon, isAvailable as claudeAvailable } from '../claude-runtime/index.js'
 
 // Which inventories describe user-facing capabilities (→ features) vs shared infrastructure.
 const FEATURE_KINDS = new Set(['routes_endpoints', 'rest_api', 'graphql', 'workers_jobs', 'services_finders_policies', 'response_shaping', 'tokens_actors', 'downloads_uploads_exports', 'search_aggregation'])
@@ -145,14 +145,21 @@ function nodeForRow(g, snapshot_id, featureId, kind, row) {
 
 // Build the full graph (into `g`) from clusters + infra; return reconciliation + gate results.
 // onProgress(ev) receives granular live events (per-feature, shares, infra) for the recon UI.
-export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, readSource = null, onProgress = () => {} }) {
+export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, semantic = true, readSource = null, onProgress = () => {} }) {
   const sid = snapshot.id
   const before = () => counts(g).nodes
   upsertNode(g, { type: 'PROJECT', id: project.id, name: project.name, snapshot_id: sid, data: { languages: profile.languages, frameworks: profile.frameworks } })
   upsertNode(g, { type: 'SNAPSHOT', id: sid, name: sid.slice(0, 20), snapshot_id: sid, data: { file_count: snapshot.file_count, content_hash: snapshot.content_hash } })
   upsertEdge(g, { type: 'CONTAINS', from: project.id, to: sid, snapshot_id: sid })
 
-  const features = featurePlan || clusterFeatures(inventories)
+  const clusters = featurePlan || clusterFeatures(inventories)
+  // FAIL-CLOSED: with no Claude-derived meaning, directory clusters are NOT business features. Build them as
+  // ARCH_CLUSTER nodes (technical architecture), never FEATURE nodes, and never scrape roles from them. Only Claude
+  // may promote a technical cluster to a confirmed feature — so offline / Lead-failed runs publish architecture, not
+  // fabricated capabilities. (See reconcileAndGate → SEMANTIC_PLANNING_BLOCKED.)
+  if (semantic === false) { buildArchitecture(g, { project, sid, clusters, inventories, onProgress }); buildInfra(g, sid, project, inventories, onProgress); return reconcileAndGate(g, { inventories, features: [], clusters, files: profile.files, blocked: true }) }
+
+  const features = clusters
   const slugCounts = features.reduce((m, f) => m.set(f.slug, (m.get(f.slug) || 0) + 1), new Map())
   const domains = new Set()
   const serviceUsers = new Map()   // serviceNodeId -> Set(featureId)  → SHARES_IMPLEMENTATION_WITH (§14.6)
@@ -185,7 +192,10 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
       const nid = nodeForRow(g, sid, featId, kind, row)
       if (nid && ['routes_endpoints', 'rest_api', 'graphql', 'workers_jobs'].includes(kind)) interfaceNodes.push({ nid, kind, row, primary: featId })
       if (nid && /^service:|^authcheck:/.test(nid)) { if (!serviceUsers.has(nid)) serviceUsers.set(nid, new Set()); serviceUsers.get(nid).add(featId) }
-      if (kind === 'tokens_actors' || (kind === 'services_finders_policies' && row.detail === 'policy')) addIdentityContext(g, sid, featId, nid, row)
+      // Identity (roles/permissions) may ONLY be established from authoritative production/config evidence — never
+      // from specs, fixtures, assets, docs, translations or generated code. This kills the "roles scraped from a
+      // permission_check_spec.rb string" class of bug at the source, in every language.
+      if ((kind === 'tokens_actors' || (kind === 'services_finders_policies' && row.detail === 'policy')) && canEstablishIdentity(row.file)) addIdentityContext(g, sid, featId, nid, row)
       // #6: record THIS row's terminal reconciliation status in the ledger (per-item, not summary math).
       addReconItem(g, { id: ID.scoped('recon', kind, row.file, row.line, row.entry), kind, file: row.file, line: row.line, entry: row.entry, status: 'MAPPED_TO_FEATURE', feature_id: featId, snapshot_id: sid })
     }
@@ -225,9 +235,13 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
   }
   if (shares) onProgress({ kind: 'shares', count: shares, label: `Linked ${shares} shared-implementation edge(s)` })
 
-  // Infra rows → project-level nodes (SHARED_INFRASTRUCTURE), never features. Each gets a provenance claim (#6) and
-  // a reconciliation ledger row — infra is reconciled with evidence, not silently counted.
-  let infra = 0
+  buildInfra(g, sid, project, inventories, onProgress)
+  return reconcileAndGate(g, { inventories, features, files: profile.files })
+}
+
+// Infra rows → project-level nodes (SHARED_INFRASTRUCTURE), never features. Each gets a provenance claim (#6) and
+// a reconciliation ledger row — infra is reconciled with evidence, not silently counted. Runs in BOTH modes.
+function buildInfra(g, sid, project, inventories) {
   for (const kind of INFRA_KINDS) for (const row of inventories[kind] || []) {
     const type = kind === 'datastores_integrations' ? (row.detail === 'datastore' ? 'DATA_STORE' : 'INTEGRATION') : 'PROCESS'
     const id = ID.scoped(type.toLowerCase(), row.file, row.line, row.entry)
@@ -235,10 +249,29 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
     upsertEdge(g, { type: type === 'INTEGRATION' ? 'USES_INTEGRATION' : 'CONTAINS', from: project.id, to: id, snapshot_id: sid })
     addClaim(g, { id: `c:${id}:defined:${row.file}:${row.line}`, node_id: id, field: 'defined', snapshot_id: sid, file: row.file, line_start: row.line, confidence: 'medium', method: 'grep' })
     addReconItem(g, { id: ID.scoped('recon', kind, row.file, row.line, row.entry), kind, file: row.file, line: row.line, entry: row.entry, status: 'SHARED_INFRASTRUCTURE', snapshot_id: sid })
-    infra++
   }
+}
 
-  return reconcileAndGate(g, { inventories, features, files: profile.files })
+// BLOCKED mode: preserve the deterministic technical inventories as ARCH_CLUSTER architecture — the same typed fact
+// nodes (endpoints/services/models/jobs) anchored to their directory cluster, reconciled as UNCLEAR_COVERAGE_GAP
+// (extracted, not semantically mapped). NO FEATURE nodes, NO role/permission scraping (only Claude derives meaning),
+// NO capability correlation. This is what makes a Lead-failed run publish honest architecture instead of fake features.
+function buildArchitecture(g, { project, sid, clusters, onProgress }) {
+  const domains = new Set()
+  onProgress({ kind: 'features_planned', count: 0, blocked: true, clusters: clusters.length,
+    label: `Semantic planning blocked — preserving ${clusters.length} technical cluster(s) as architecture only (no business features)` })
+  for (const c of clusters) {
+    const domId = ID.domain(c.domain), clusterId = ID.scoped('arch', c.domain, c.slug)
+    if (!domains.has(c.domain)) { domains.add(c.domain); upsertNode(g, { type: 'DOMAIN', id: domId, name: titleize(c.domain), snapshot_id: sid }); upsertEdge(g, { type: 'CONTAINS', from: project.id, to: domId, snapshot_id: sid }) }
+    upsertNode(g, { type: 'ARCH_CLUSTER', id: clusterId, name: c.name, snapshot_id: sid, data: { domain: c.domain, slug: c.slug,
+      technical: true, unverified: true, row_count: c.rows.length, planning_method: c.planning_method || 'module-cohesion',
+      note: 'technical cluster derived from directory structure — NOT a confirmed business feature (semantic planning blocked)' } })
+    upsertEdge(g, { type: 'CONTAINS', from: domId, to: clusterId, snapshot_id: sid })
+    for (const { kind, row } of c.rows) {
+      nodeForRow(g, sid, clusterId, kind, row)   // typed FACT node, anchored to the cluster (no feature semantics)
+      addReconItem(g, { id: ID.scoped('recon', kind, row.file, row.line, row.entry), kind, file: row.file, line: row.line, entry: row.entry, status: 'UNCLEAR_COVERAGE_GAP', snapshot_id: sid })
+    }
+  }
 }
 
 // A one-line structure-derived purpose (offline). AI enrichment can overwrite FEATURE.data.purpose later.
@@ -249,7 +282,7 @@ function featurePurpose(f) {
 }
 
 // §14.7 reconciliation + §14.9 completion gate — computed from the PERSISTED per-item ledger, not summary arithmetic.
-function reconcileAndGate(g, { inventories, features, files = null }) {
+function reconcileAndGate(g, { inventories, features, clusters = [], files = null, blocked = false }) {
   const terminal = reconCounts(g)                       // { MAPPED_TO_FEATURE: n, SHARED_INFRASTRUCTURE: m, ... }
   const reconciled = reconTotal(g)
   // Every inventory item must have reached a terminal status. Any not in the ledger → an UNRECONCILED gap.
@@ -257,30 +290,62 @@ function reconcileAndGate(g, { inventories, features, files = null }) {
   const unreconciled = Math.max(0, totalRows - reconciled)
   const feature_rows = terminal.MAPPED_TO_FEATURE || 0
   const infra_rows = terminal.SHARED_INFRASTRUCTURE || 0
-  const gaps = []
+  const unmapped_rows = terminal.UNCLEAR_COVERAGE_GAP || 0
   const extraction = inventoryMeta(inventories)
+  // Technical coverage = did we extract facts for the source? Semantic coverage = did Claude map them to features?
+  // These are SEPARATE and never conflated — a blocked run has high technical coverage and ZERO semantic coverage.
+  const feature_bearing = totalRows - (inventories.processes_ipc?.length || 0) - (inventories.datastores_integrations?.length || 0)
+  const technical_coverage = extraction.source_code_files ? Math.round((extraction.represented_source_files / extraction.source_code_files) * 100) : (files === 0 ? 0 : 100)
+  const semantic_coverage = blocked || feature_bearing === 0 ? 0 : Math.round((feature_rows / feature_bearing) * 100)
+  const coverage = { feature_count: features.length, mapped: features.length, technical_clusters: clusters.length,
+    infra: infra_rows, feature_rows, infra_rows, unmapped_rows, reconciled, total_rows: totalRows,
+    technical_coverage, semantic_coverage, plugin_matched: extraction.matched_plugins.length > 0, extraction, terminal }
+
+  // FAIL-CLOSED: Claude could not derive meaning. Publish technical inventories + architecture only. NEVER COMPLETE,
+  // never a semantic-coverage claim, never folder clusters as mapped features.
+  if (blocked) {
+    return { coverage, gate: { status: 'SEMANTIC_PLANNING_BLOCKED', gaps: [
+      `semantic planning blocked — the Claude Lead was unavailable or its ontology failed validation; ${feature_bearing} feature-bearing inventory row(s) were extracted and preserved as ${clusters.length} technical cluster(s) under Architecture, but NONE were mapped to business features`,
+      'connect Claude (a logged-in Claude Agent SDK) and re-scan to derive repository-specific features, actors, roles and permissions',
+      ...(extraction.unrepresented_source_files > 0 ? [`${extraction.unrepresented_source_files} source file(s) were not represented by any inventory row`] : []),
+    ] } }
+  }
+
+  const gaps = []
   if (features.length === 0) gaps.push(
     files === 0 ? 'no source files found at this path — the directory is empty or points at the wrong place'
       : feature_rows > 0 ? `${feature_rows} inventory rows found but no features clustered (clustering gap)`
         : 'no features mapped — no language plugin matched this stack (unsupported or non-code repository)')
   if (unreconciled) gaps.push(`${unreconciled} inventory item(s) never reached a terminal reconciliation status`)
   if (extraction.unrepresented_source_files > 0) gaps.push(`${extraction.unrepresented_source_files} source file(s) were not represented by any inventory row`)
-  if (extraction.universal_used) gaps.push(`generic structural extraction was required${extraction.matched_plugins.length ? ' for uncovered languages/modules' : ''}; feature semantics remain estimated until a stack-specific plugin or Lead verifies them`)
-  const catchall = features.filter((f) => f.planning_method === 'coverage-catchall')
+  const catchall = features.filter((f) => f.planning_method === 'coverage-catchall' || f.planning_method === 'lead-gap-fallback')
   if (catchall.length) {
     const rows = catchall.reduce((n, f) => n + f.rows.length, 0)
-    gaps.push(`${rows} inventory item(s) are structurally covered by ${catchall.length} supporting-capability catch-all feature(s) but still need semantic consolidation`)
+    gaps.push(`${rows} inventory item(s) fell to a deterministic gap-fallback under ${catchall.length} cluster(s) the Lead did not explicitly map — semantics remain estimated for these`)
   }
   const status = gaps.length === 0 ? 'COMPLETE' : 'COMPLETE_WITH_GAPS'
-  return {
-    coverage: { feature_count: features.length, mapped: features.length, infra: infra_rows, feature_rows, infra_rows,
-      reconciled, total_rows: totalRows, plugin_matched: extraction.matched_plugins.length > 0, extraction, terminal },
-    gate: { status, gaps },
-  }
+  return { coverage, gate: { status, gaps } }
 }
 
 // A unique, trackable mission id per scan (displayed in the UI/CLI and recorded in publication.json).
 export const newMissionId = () => `mission:${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`
+
+// Call the Claude Lead with BOUNDED retry + exponential backoff. A transient failure (timeout, rate limit) retries;
+// a clean null (no plan) is returned with a reason so the caller can fail closed. Never loops unboundedly.
+async function planReconWithRetry(args, { retries = 2, baseMs = 400 } = {}) {
+  const { fn, ...reconArgs } = args
+  const lead_fn = fn || planRecon                       // test seam: inject a Lead without the real SDK
+  let reason = 'Claude Lead returned no valid plan'
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const lead = await lead_fn(reconArgs)
+      if (lead?.plan) return { lead, model: lead.model || null, failureReason: null }
+      reason = 'Claude Lead produced no valid ontology (empty or contract-violating plan)'
+    } catch (e) { reason = `Claude Lead error: ${e?.message || e}` }
+    if (attempt < retries) { args.onEvent?.({ kind: 'lead_retry', attempt: attempt + 1, label: `Lead attempt ${attempt + 1} failed — retrying with backoff` }); await new Promise((r) => setTimeout(r, baseMs * 2 ** attempt)) }
+  }
+  return { lead: null, model: null, failureReason: reason }
+}
 
 // ── orchestration ──────────────────────────────────────────────────────────────────────────────
 // Full deterministic scan with ATOMIC PUBLICATION (§4f):
@@ -288,7 +353,7 @@ export const newMissionId = () => `mission:${Date.now().toString(36)}-${crypto.r
 //   only on a clean cross-check do we atomically seal (replace the published index + phase1-maps + publication.json).
 // A failure at any point leaves the previously-published snapshot untouched. `render` is injected so recon stays
 // decoupled from the markdown-renderer; it must return { crosscheck: { ok } }.
-export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = () => {}, onProgress = () => {}, render = null, missionId = newMissionId(), agentic = true } = {}) {
+export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = () => {}, onProgress = () => {}, render = null, missionId = newMissionId(), agentic = true, planLead = null } = {}) {
   const project = getProject(dataRoot, projectId)
   if (!project) throw new Error(`unknown project: ${projectId}`)
   onPhase({ phase: 'freeze', label: 'Freezing source snapshot', mission: missionId })
@@ -303,30 +368,54 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   const inventories = extractInventories({ sourceRoot: src, profile })
   const invCounts = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, (inventories[k] || []).length]))
   const invTotal = Object.values(invCounts).reduce((a, b) => a + b, 0)
+  // The reuse/staleness fingerprint spans ALL pipeline component versions (extractor + planner + prompt + identity +
+  // renderer + semantic-validation) + the inventories. Any version bump invalidates a stale plan and forces a re-plan.
+  const versions = pipelineVersions()
   const inventoryFingerprint = crypto.createHash('sha256').update(`${INVENTORY_EXTRACTOR_VERSION}\n${JSON.stringify(inventories)}`).digest('hex')
+  const planFingerprint = crypto.createHash('sha256').update(`${JSON.stringify(versions)}\n${inventoryFingerprint}`).digest('hex')
   onProgress({ kind: 'inventories', label: `Extracted ${invTotal} inventory items across 11 lists`, counts: invCounts, total: invTotal })
-  onPhase({ phase: 'planning', label: 'Lead consolidating semantic features' })
+  onPhase({ phase: 'planning', label: 'Lead deriving repository-specific semantics' })
   const previousPublication = latestPublished(dataRoot, projectId)?.publication || null
   const existingPublication = readPublication(dataRoot, projectId, sid)
   const reused = !!existingPublication
-  let lead = null, featurePlan = null, planningMethod = 'deterministic-semantic'
+
+  // FAIL-CLOSED planning. Only Claude may derive repository meaning. Precedence: sealed SEMANTIC plan reuse →
+  // Claude Lead (bounded retry) → BLOCKED. A blocked run preserves technical clusters as architecture, never features.
+  const requestedPlanner = agentic ? 'agent-lead' : 'blocked'
+  let lead = null, featurePlan = null, executedPlanner = 'blocked', semantic = false, model = null
+  let failureReason = null, validation = null
   if (reused) try {
     const sealedPlan = JSON.parse(fs.readFileSync(path.join(snapDir, 'publications', existingPublication.pub, 'feature-plan.json'), 'utf8'))
-    if (sealedPlan.inventory_fingerprint === inventoryFingerprint && Array.isArray(sealedPlan.features)) {
-      featurePlan = sealedPlan.features
-      planningMethod = 'sealed-plan-reuse'
+    if (sealedPlan.plan_fingerprint === planFingerprint && sealedPlan.semantic === true && Array.isArray(sealedPlan.features) && sealedPlan.features.length) {
+      featurePlan = sealedPlan.features; executedPlanner = 'sealed-plan-reuse'; semantic = true
+      lead = { sessionId: existingPublication?.lead_session_id || null }
     }
   } catch {}
-  if (!featurePlan && agentic) {
-    lead = await planRecon({ sourceRoot: src, profile, inventoryCounts: invCounts,
+  if (!featurePlan && agentic && (planLead || await claudeAvailable())) {
+    const r = await planReconWithRetry({ sourceRoot: src, profile, inventoryCounts: invCounts, fn: planLead,
       resume: existingPublication?.lead_session_id || previousPublication?.lead_session_id || null, onEvent: onProgress })
-    featurePlan = validateLeadPlan(lead?.plan, inventories)
-    if (featurePlan) planningMethod = 'agent-lead'
+    lead = r.lead; model = r.model; failureReason = r.failureReason
+    if (lead?.plan) {
+      const validated = validateLeadPlan(lead.plan, inventories)   // S3/S4: ontology → grounded feature plan (evidence-validated)
+      if (validated && validated.length) { featurePlan = validated; executedPlanner = 'agent-lead'; semantic = true; validation = { ok: true, features: validated.length } }
+      else { failureReason = failureReason || 'Lead plan failed ontology validation (no grounded features)'; validation = { ok: false, reason: failureReason } }
+    }
+  } else if (!featurePlan && agentic) {
+    failureReason = 'Claude Agent SDK not available (not installed or not logged in)'
+  } else if (!featurePlan) {
+    failureReason = 'agentic planning disabled (requested_planner=blocked)'
   }
-  if (!featurePlan) featurePlan = deterministicSemanticPlan(inventories)
-  const plannerName = planningMethod === 'agent-lead' ? 'claude-agent-sdk' : planningMethod
-  onProgress({ kind: 'semantic_plan', count: featurePlan.length, session_id: lead?.sessionId || null,
-    method: planningMethod, label: `Planned ${featurePlan.length} coherent business features` })
+  // FAIL-CLOSED: no Claude-derived meaning → preserve deterministic technical clusters as ARCHITECTURE (not features).
+  if (!semantic) { featurePlan = deterministicSemanticPlan(inventories); executedPlanner = 'blocked' }
+  const plannerName = semantic ? (executedPlanner === 'sealed-plan-reuse' ? 'sealed-plan-reuse' : 'claude-agent-sdk') : 'blocked'
+  const planProvenance = { requested_planner: requestedPlanner, executed_planner: executedPlanner, semantic,
+    lead_session_id: lead?.sessionId || null, model, failure_reason: failureReason,
+    fallback_reason: semantic ? null : 'semantic planning blocked — published technical architecture only (no business features)',
+    validation_result: validation, prompt_version: PROMPT_VERSION, planner_version: PLANNER_VERSION, versions }
+  onProgress({ kind: 'semantic_plan', count: semantic ? featurePlan.length : 0, technical_clusters: semantic ? 0 : featurePlan.length,
+    session_id: lead?.sessionId || null, method: executedPlanner, semantic, blocked: !semantic,
+    label: semantic ? `Lead planned ${featurePlan.length} source-grounded business features`
+      : `Semantic planning BLOCKED (${failureReason}) — preserving ${featurePlan.length} technical cluster(s) as architecture` })
   // Content-addressed: if this exact snapshot id was already published, the source is UNCHANGED (a re-verify, not new work).
   if (reused) onProgress({ kind: 'reused', label: 'Source unchanged since the last scan — re-verifying the same snapshot' })
 
@@ -337,21 +426,21 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   try {
     const missionPath = path.join(attempt, 'mission.json')
     const mission = { mission_id: missionId,
-      lead_session_id: lead?.sessionId || existingPublication?.lead_session_id || previousPublication?.lead_session_id || null,
-      planner: plannerName, created_at: new Date().toISOString(),
+      lead_session_id: lead?.sessionId || null,
+      planner: plannerName, ...planProvenance, created_at: new Date().toISOString(),
       workstreams: featurePlan.map((f) => ({ id: `${f.domain}/${f.slug}`, name: f.name, domain: f.domain,
-        inventory_rows: f.rows.length, status: 'PLANNED', planning_method: f.planning_method })) }
+        inventory_rows: f.rows.length, status: 'PLANNED', kind: semantic ? 'feature' : 'arch_cluster', planning_method: f.planning_method })) }
     fs.writeFileSync(missionPath, JSON.stringify(mission, null, 2))
-    fs.writeFileSync(path.join(attempt, 'feature-plan.json'), JSON.stringify({ inventory_fingerprint: inventoryFingerprint,
-      planning_method: planningMethod, features: featurePlan }, null, 2))
-    onPhase({ phase: 'graph', label: 'Clustering features + building the graph' })
+    fs.writeFileSync(path.join(attempt, 'feature-plan.json'), JSON.stringify({ plan_fingerprint: planFingerprint,
+      inventory_fingerprint: inventoryFingerprint, semantic, ...planProvenance, features: featurePlan }, null, 2))
+    onPhase({ phase: 'graph', label: semantic ? 'Mapping features + building the graph' : 'Preserving technical architecture (semantic planning blocked)' })
     let staging = null, index = null, result, merged, crosscheck
     try {
       staging = openGraph(path.join(attempt, 'staging.sqlite'))
       staging.exec('BEGIN')
       try {
         const readSource = (rel) => { try { return fs.readFileSync(path.join(src, safeRelPath(rel)), 'utf8') } catch { return '' } }
-        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, readSource, onProgress })
+        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, semantic, readSource, onProgress })
         staging.exec('COMMIT')
         mission.workstreams = mission.workstreams.map((w) => ({ ...w, status: 'COMPLETED', completed_at: new Date().toISOString() }))
         mission.completed_at = new Date().toISOString()
@@ -383,8 +472,9 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
     onPhase({ phase: 'seal', label: 'Sealing + publishing the snapshot' })
     const pubId = crypto.createHash('sha256').update(`${missionId}:${crypto.randomUUID()}`).digest('hex').slice(0, 16)
     const publication = { state: result.gate.status, published: true, mission_id: missionId,
-      lead_session_id: lead?.sessionId || existingPublication?.lead_session_id || previousPublication?.lead_session_id || null,
-      planner: plannerName, workstreams: featurePlan.length,
+      lead_session_id: lead?.sessionId || null, planner: plannerName, ...planProvenance,
+      workstreams: featurePlan.length, semantic_coverage: result.coverage.semantic_coverage, technical_coverage: result.coverage.technical_coverage,
+      technical_clusters: result.coverage.technical_clusters,
       gate: result.gate.status, gaps: result.gate.gaps, crosscheck, graph: merged, features: result.coverage.feature_count, reconciled: result.coverage.reconciled, reused, sealed_at: new Date().toISOString() }
     sealPublish(snapDir, attempt, pubId, publication)
 

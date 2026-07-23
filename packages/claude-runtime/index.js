@@ -15,7 +15,10 @@ import { fileURLToPath } from 'node:url'
 let _sdk           // cached dynamic import result: module | null
 let _probed = false
 let _claudePath
-const SDK_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODENGRAM_AI_TIMEOUT_MS) || 120_000)
+// Lead timeout is a CEILING, not a target — a tiny repo's Lead finishes in seconds regardless. 120s was far too tight
+// for a real repo (the Lead consolidates + spot-checks), so UI/server scans of Nextcloud/GitLab-scale kept aborting
+// mid-plan and retrying. Default to 10 min so the first attempt has room to succeed; override with CODENGRAM_AI_TIMEOUT_MS.
+const SDK_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODENGRAM_AI_TIMEOUT_MS) || 600_000)
 const PLAN_TIMEOUT_MS = Math.max(60_000, Number(process.env.CODENGRAM_PLAN_TIMEOUT_MS) || 1_800_000)
 const MODEL = process.env.CODENGRAM_MODEL || 'claude-agent-sdk'   // recorded in provenance; SDK owns the concrete model
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))

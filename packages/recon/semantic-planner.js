@@ -123,6 +123,32 @@ export function validateLeadPlan(plan, inventories) {
     }
     if (winner) { winner.def.rows.push({ kind: item.kind, row: item.row }); claimed.add(item.key) }
   }
+
+  // SECOND PASS — directory inheritance (coverage, evidence-grounded, NOT name-based). A feature the Lead confirmed
+  // OWNS the directories its claimed rows live in; the Lead vouched for that dir tree. So attribute an unmatched row to
+  // the feature that owns its directory (the deepest SPECIFIC dir with a clear majority owner). This extends a confirmed
+  // capability to its sibling files — raising semantic coverage — without inventing any feature. No owned dir → stays
+  // in archClusters. Guards (min depth, non-generic leaf, ≥60% majority) keep it from over-reaching into shared roots.
+  const GENERIC_DIR = /^(app|apps|lib|libs|src|source|core|common|main|config|test|tests|spec|specs|vendor|node_modules|public|private|internal|shared|dist|build|packages|modules|bundles|components|controllers|models|views|helpers|policies|workers|jobs|finders|serializers|presenters|services|api|apis|graphql|routes|handlers|util|utils)$/i
+  const dirClaims = new Map()   // "a/b/c" → Map(def → count of that feature's claimed rows in the dir)
+  for (const def of definitions) for (const { row } of def.rows) {
+    const segs = String(row.file || '').split('/'); segs.pop()
+    if (segs.length < 2) continue
+    const dir = segs.join('/'); if (!dirClaims.has(dir)) dirClaims.set(dir, new Map())
+    const m = dirClaims.get(dir); m.set(def, (m.get(def) || 0) + 1)
+  }
+  const dirOwner = new Map()    // dir → the single feature that dominantly owns it (specific leaf + ≥60% majority)
+  for (const [dir, m] of dirClaims) {
+    if (GENERIC_DIR.test(dir.split('/').pop())) continue
+    let total = 0, best = null; for (const [def, n] of m) { total += n; if (!best || n > best.n) best = { def, n } }
+    if (best && best.n / total >= 0.6) dirOwner.set(dir, best.def)
+  }
+  for (const item of sourceRows) {
+    if (claimed.has(item.key)) continue
+    const segs = String(item.row.file || '').split('/'); segs.pop()
+    while (segs.length >= 2) { const dir = segs.join('/'); if (dirOwner.has(dir)) { dirOwner.get(dir).rows.push({ kind: item.kind, row: item.row }); claimed.add(item.key); break } segs.pop() }
+  }
+
   const leadFeatures = definitions.filter((d) => d.rows.length)
     .map(({ explicit, paths, terms, symbols, entries, excludePaths, excludeTerms, ...d }) => d)
   if (!leadFeatures.length) return null

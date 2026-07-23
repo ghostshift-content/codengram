@@ -6,7 +6,7 @@ export const EXPORTER_VERSION = '0.3.0'
 
 // ── Pipeline component versions — the publication fingerprint. Any bump invalidates stale plans and forces
 // regeneration (the extractor version lives in @codengram/inventories as INVENTORY_EXTRACTOR_VERSION). ──────────
-export const PLANNER_VERSION = '2.0.0'              // Claude-only semantic ontology; deterministic clusters are architecture hints only
+export const PLANNER_VERSION = '2.1.0'              // Claude-only ontology + directory-inheritance coverage pass
 export const PROMPT_VERSION = '2.0.0'               // bundled recon-skill + stack-neutral Lead/worker contract
 export const IDENTITY_SCHEMA_VERSION = '2.0.0'      // grounded actor/role/permission scope, acquisition and operation model
 export const RENDERER_SCHEMA_VERSION = '2.0.0'      // complete recon-skill phase1-maps artifact contract

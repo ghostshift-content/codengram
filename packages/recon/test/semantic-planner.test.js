@@ -59,3 +59,17 @@ test('Lead keeps the rows its selectors claim; unmatched rows go to a module fal
   assert.ok(!features.some((f) => f.slug === 'billing'), 'an unconfirmed directory does not become a business feature')
   assert.ok(archClusters.some((f) => f.slug === 'billing' && f.planning_method === 'lead-gap-fallback'), 'it is preserved as a technical cluster instead')
 })
+
+test('directory inheritance raises coverage without inventing features: a sibling in a Lead-confirmed dir is attributed, not architecture', () => {
+  const inv = empty()
+  inv.services_finders_policies.push({ file: 'app/services/merge_requests/create_service.rb', line: 1, entry: 'CreateService', detail: 'service' })
+  inv.services_finders_policies.push({ file: 'app/services/merge_requests/reopen_service.rb', line: 1, entry: 'ReopenService', detail: 'service' }) // NOT selected by the Lead
+  inv.services_finders_policies.push({ file: 'app/services/unrelated/thing.rb', line: 1, entry: 'Thing', detail: 'service' })                       // no owned dir
+  const plan = { features: [{ name: 'Merge Requests', slug: 'merge-requests', domain: 'code', include_paths: [], include_terms: ['create_service'] }] }
+  const { features, archClusters } = validateLeadPlan(plan, inv)
+  const mr = features.find((f) => f.slug === 'merge-requests')
+  assert.equal(mr.rows.length, 2, 'the unselected sibling in the SAME Lead-confirmed dir is inherited')
+  assert.ok(mr.rows.some((r) => /reopen_service/.test(r.row.file)))
+  assert.ok(archClusters.some((f) => f.rows.some((r) => /unrelated/.test(r.row.file))), 'a row with no owned dir stays architecture')
+  assert.ok(!features.some((f) => /unrelated|thing/i.test(f.slug)), 'no feature invented from an unowned directory')
+})

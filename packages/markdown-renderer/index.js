@@ -59,6 +59,10 @@ export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate
 
   // consolidated/* — the architecture view lists technical clusters (always present when blocked; supplementary
   // when semantic). Under a blocked run these clusters are the ONLY structural output — never dressed up as features.
+  // roles/ — the subject axis (actors + role ladder + role→ability matrix), built from the evidence-validated
+  // ontology. Present only when the Lead derived identity; a blocked run has none (correctly emits nothing here).
+  const roleNodes = nodesByType(db, 'ROLE'), actorNodes = nodesByType(db, 'ACTOR')
+  if (roleNodes.length || actorNodes.length) { const r = renderRoles(db, roleNodes, actorNodes); emit('roles/role-structure.md', r.structure); emit('roles/role-ability-matrix.md', r.matrix) }
   if (clusters.length) emit('consolidated/architecture.md', renderArchitecture(db, clusters, coverage, gate, blocked))
   emit('consolidated/00_INDEX.md', renderIndex(features, domains, blocked, clusters))
   emit('consolidated/feature_coverage_matrix.md', renderCoverage(features, coverage, blocked))
@@ -148,32 +152,48 @@ const controllerOf = (n) => {
   const action = n.name?.match(/^action\s+(\w+)/)?.[1]
   return action ? `${klass}#${action}` : klass || '—'
 }
+// Empty-state tokens (spec): "not extracted" is NEVER "none exist". A channel our extractors COVER but this feature
+// has none of → COVERAGE_GAP. A channel no extractor covers for this stack (RPC/WS/CLI/Events today) → EXTRACTOR_UNSUPPORTED.
+const emptyLine = (title, state) => state === 'EXTRACTOR_UNSUPPORTED'
+  ? `**EXTRACTOR_UNSUPPORTED** — _no extractor covers ${title.toLowerCase()} for this stack; absence here is not evidence that none exist._`
+  : `**COVERAGE_GAP** — _no ${title.toLowerCase()} entries were mapped to this feature; an explicit gap, not proof that none exist._`
 function renderEntryPoints(entries, auth, featureSlug) {
   const blocks = []
   const max = 80
-  const add = (title, header, rows, values) => {
+  const add = (title, header, rows, values, emptyState = 'COVERAGE_GAP') => {
     blocks.push(`### ${title}`)
-    if (!rows.length) {
-      blocks.push(`_No ${title.toLowerCase()} entries were mapped. This is an explicit coverage gap, not evidence that none exist._`, '')
-      return
-    }
+    if (!rows.length) { blocks.push(emptyLine(title, emptyState), ''); return }
     blocks.push(`| ${header.join(' | ')} |`, `|${header.map(() => '---').join('|')}|`,
       ...rows.slice(0, max).map((n) => `| ${values(n).map(cell).join(' | ')} |`))
     if (rows.length > max) blocks.push(`_… ${rows.length - max} more ${title.toLowerCase()} entries in \`../ledgers/${featureSlug}.jsonl\`._`)
     blocks.push('')
   }
-  const web = entries.filter((n) => (n.type === 'ROUTE' || n.type === 'ENDPOINT') && n.data?.interface_kind !== 'rest')
+  const web = entries.filter((n) => (n.type === 'ROUTE' || n.type === 'ENDPOINT') && n.data?.interface_kind !== 'rest' && n.data?.interface_kind !== 'rpc' && n.data?.interface_kind !== 'websocket' && n.data?.interface_kind !== 'cli')
   const rest = entries.filter((n) => (n.type === 'ROUTE' || n.type === 'ENDPOINT') && n.data?.interface_kind === 'rest')
   const graphql = entries.filter((n) => n.type === 'GRAPHQL_OPERATION')
-  const jobs = entries.filter((n) => n.type === 'JOB')
+  const jobs = entries.filter((n) => n.type === 'JOB' && n.data?.interface_kind !== 'event')
+  const rpc = entries.filter((n) => n.data?.interface_kind === 'rpc')
+  const ws = entries.filter((n) => n.data?.interface_kind === 'websocket')
+  const cli = entries.filter((n) => n.data?.interface_kind === 'cli')
+  const events = entries.filter((n) => n.data?.interface_kind === 'event')
+  // The 8 channels the spec requires — Web / REST / GraphQL / RPC / WebSocket / CLI / Workers / Events. Each renders
+  // its table when populated, else the honest empty-state token. RPC/WS/CLI/Events fall back to EXTRACTOR_UNSUPPORTED.
   add('Web Routes / Controllers', ['Route/Action', 'Controller', 'Method', 'Purpose', 'Auth/Authz Notes'], web,
     (n) => [n.name || n.id, controllerOf(n), methodOf(n), purposeOf(n, 'Web controller action'), authFor(n, auth)])
   add('REST API', ['Endpoint', 'API Class', 'Method', 'Purpose', 'Auth/Authz Notes'], rest,
     (n) => [n.data?.path || n.name || n.id, n.data?.api_class || n.data?.file || 'API', methodOf(n), purposeOf(n, 'REST API operation'), authFor(n, auth)])
   add('GraphQL', ['Query/Mutation/Resolver', 'File', 'Purpose', 'Auth/Authz Notes'], graphql,
     (n) => [n.name || n.id, sourceRef(n), purposeOf(n, 'GraphQL field, mutation, or resolver'), authFor(n, auth)])
+  add('RPC', ['Method', 'Service/File', 'Purpose', 'Auth/Authz Notes'], rpc,
+    (n) => [n.name || n.id, sourceRef(n), purposeOf(n, 'RPC method'), authFor(n, auth)], rpc.length ? 'COVERAGE_GAP' : 'EXTRACTOR_UNSUPPORTED')
+  add('WebSocket', ['Channel/Event', 'File', 'Purpose', 'Auth/Authz Notes'], ws,
+    (n) => [n.name || n.id, sourceRef(n), purposeOf(n, 'WebSocket channel'), authFor(n, auth)], ws.length ? 'COVERAGE_GAP' : 'EXTRACTOR_UNSUPPORTED')
+  add('CLI', ['Command', 'File', 'Purpose', 'Auth/Authz Notes'], cli,
+    (n) => [n.name || n.id, sourceRef(n), purposeOf(n, 'CLI command'), authFor(n, auth)], cli.length ? 'COVERAGE_GAP' : 'EXTRACTOR_UNSUPPORTED')
   add('Workers / Async', ['Worker', 'Enqueued From', 'Inputs', 'Purpose', 'Auth/Authz Notes'], jobs,
     (n) => [n.name || n.id, n.data?.enqueued_from || sourceRef(n), n.data?.inputs || 'Not mapped', purposeOf(n, 'Background job or enqueue'), authFor(n, auth)])
+  add('Events', ['Event', 'Emitted From', 'Purpose', 'Auth/Authz Notes'], events,
+    (n) => [n.name || n.id, sourceRef(n), purposeOf(n, 'Domain/event emission'), authFor(n, auth)], events.length ? 'COVERAGE_GAP' : 'EXTRACTOR_UNSUPPORTED')
   return blocks.join('\n')
 }
 function renderLedger(db, nb, f, claimMap) {
@@ -255,6 +275,35 @@ function renderReviewContext(entries, auth, models, flows) {
   if (!leads.length) leads.push('No additional structural lead generated; inspect cited paths when deeper context is required.')
   return leads.map((x, i) => `${i + 1}. ${x}`).join('\n')
 }
+// roles/ — the identity subject axis. role-structure.md = actor catalog + role ladder (obtained-via, hierarchical,
+// source). role-ability-matrix.md = ability (permission) × role grid with ✓ where a role enables that ability, from
+// the ontology's AUTHORIZED_BY (role→permission) wiring. Every row/name is source-grounded (Lead ontology, validated).
+function renderRoles(db, roles, actors) {
+  const perms = nodesByType(db, 'PERMISSION')
+  const cite = (n) => n.data?.source ? ` \`${n.data.source}\`` : ''
+  const roleName = (r) => r.name
+  // role → set(permission id) from the ontology wiring (role AUTHORIZED_BY permission)
+  const enables = new Map(roles.map((r) => [r.id, new Set()]))
+  for (const e of db.prepare(`SELECT src,dst FROM edges WHERE type='AUTHORIZED_BY' AND src LIKE 'role:%'`).all()) { if (enables.has(e.src)) enables.get(e.src).add(e.dst) }
+  const structure = [
+    `# Role & Actor Structure`, '',
+    `> Source-grounded identity model derived by the Lead and validated against the frozen snapshot. Actor = who acts; role = privilege level; permission = ability. These are distinct axes.`, '',
+    `## Actors (${actors.length})`, '',
+    actors.length ? `| Actor | Obtained via | Hierarchical | Source |\n|---|---|---|---|\n${actors.map((a) => `| ${cell(a.name)} | ${cell(a.data?.obtained_via || '—')} | ${a.data?.hierarchical ? 'yes' : 'no'} |${cite(a)} |`).join('\n')}` : '_none established_', '',
+    `## Role ladder (${roles.length})`, '',
+    roles.length ? `| Role | Hierarchical | Abilities enabled | Source |\n|---|---|---|---|\n${roles.map((r) => `| ${cell(roleName(r))} | ${r.data?.hierarchical ? 'yes' : 'no'} | ${enables.get(r.id)?.size || 0} |${cite(r)} |`).join('\n')}` : '_none established_', '',
+  ].join('\n')
+  const cols = roles.slice(0, 24)
+  const matrix = [
+    `# Role → Ability Matrix`, '',
+    `- Roles: ${roles.length} · Abilities: ${perms.length}`, '',
+    perms.length && cols.length
+      ? `| Ability | ${cols.map((r) => cell(roleName(r))).join(' | ')} | Wiring |\n|---|${cols.map(() => '---').join('|')}|---|\n${perms.slice(0, 400).map((p) => `| ${cell(p.name)} | ${cols.map((r) => enables.get(r.id)?.has(p.id) ? '✓' : '○').join(' | ')} |${cite(p)} |`).join('\n')}`
+      : '_no grounded role→ability wiring derived_', '',
+  ].join('\n')
+  return { structure, matrix }
+}
+
 // Architecture view — the deterministic technical clusters (directory/namespace groupings). These are FACTS about
 // code structure, explicitly NOT confirmed business features. Present under a blocked run; supplementary otherwise.
 function renderArchitecture(db, clusters, coverage, gate, blocked) {

@@ -172,6 +172,13 @@ test('the Lead ontology builds source-grounded actors/roles/permissions; halluci
   g.close()
   const plan = JSON.parse(fs.readFileSync(path.join(snapshotDir(dataRoot, project.id, res.snapshotId), 'publications', res.pubId, 'feature-plan.json'), 'utf8'))
   assert.ok(plan.validation_result.rejected >= 2, 'the rejection ledger records the ungrounded identity entities')
+  // S7: the rendered bundle carries all 8 entry channels, honest empty-state tokens, and roles/ matrices
+  const pub = path.join(snapshotDir(dataRoot, project.id, res.snapshotId), 'publications', res.pubId, 'phase1-maps')
+  const fmap = fs.readFileSync(path.join(pub, 'features', fs.readdirSync(path.join(pub, 'features'))[0]), 'utf8')
+  for (const ch of ['Web Routes / Controllers', 'REST API', 'GraphQL', 'RPC', 'WebSocket', 'CLI', 'Workers / Async', 'Events']) assert.ok(fmap.includes(`### ${ch}`), `channel ${ch} rendered`)
+  assert.ok(fmap.includes('EXTRACTOR_UNSUPPORTED'), 'unsupported channels use the EXTRACTOR_UNSUPPORTED token')
+  assert.ok(fs.existsSync(path.join(pub, 'roles', 'role-ability-matrix.md')) && fs.existsSync(path.join(pub, 'roles', 'role-structure.md')))
+  assert.ok(fs.readFileSync(path.join(pub, 'roles', 'role-ability-matrix.md'), 'utf8').includes('Admin'), 'role→ability matrix carries the grounded role')
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 

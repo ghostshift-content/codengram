@@ -38,7 +38,7 @@ test('Lead selectors use strongest-match assignment, not feature-list order', ()
     { name: 'Users', slug: 'users-profile', domain: 'identity', purpose: 'User accounts', include_paths: [], include_terms: ['user'] },
     { name: 'Issues', slug: 'issues-work-items', domain: 'planning', purpose: 'Issue workflows', include_paths: ['app/services/issues'], include_terms: ['issue'] },
   ] }
-  const features = validateLeadPlan(plan, inv)
+  const { features } = validateLeadPlan(plan, inv)
   const issues = features.find((f) => f.slug === 'issues-work-items')
   assert.equal(issues.rows.length, 2, 'specific issue evidence wins over broad user selector')
   assert.equal(rowCount(features), 2, 'each row is assigned exactly once')
@@ -50,10 +50,11 @@ test('Lead keeps the rows its selectors claim; unmatched rows go to a module fal
   for (let i = 0; i < 80; i++) inv.graphql.push({ file: `src/billing/issue_${i}.rb`, line: 3, entry: `field :issue_${i}`, detail: 'graphql-field', plugin: 'rails' })
   const plan = { features: [{ name: 'Issues', slug: 'issues-work-items', domain: 'planning', purpose: 'Issue workflows',
     include_paths: ['app/services/issues'], include_terms: [] }] }
-  const features = validateLeadPlan(plan, inv)
+  const { features, archClusters } = validateLeadPlan(plan, inv)
   const issues = features.find((f) => f.slug === 'issues-work-items')
   assert.equal(issues.rows.length, 1, 'Lead claims the service it selected by path')
-  assert.equal(rowCount(features), 81, 'no inventory row is dropped')
-  // the 80 unmatched rows are placed by their OWN module, not folded into the Lead feature via a hardcoded taxonomy
-  assert.ok(features.some((f) => f.slug === 'billing' && f.planning_method === 'lead-gap-fallback'))
+  assert.equal(rowCount(features) + rowCount(archClusters), 81, 'no inventory row is dropped')
+  // STRICT RULE: the 80 rows the Lead did NOT confirm are ARCHITECTURE (clusters), never Lead features.
+  assert.ok(!features.some((f) => f.slug === 'billing'), 'an unconfirmed directory does not become a business feature')
+  assert.ok(archClusters.some((f) => f.slug === 'billing' && f.planning_method === 'lead-gap-fallback'), 'it is preserved as a technical cluster instead')
 })

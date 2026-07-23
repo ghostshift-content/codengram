@@ -88,17 +88,23 @@ test('scanSnapshot runs the full pipeline and atomically publishes with a missio
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 
-test('a semantic catch-all is covered but remains an explicit completion gap', () => {
+test('rows the Lead did not confirm become ARCHITECTURE (not features) + an explicit completion gap', () => {
   const dir = railsFixture()
   const profile = profileRepo(dir)
   const inv = extractInventories({ sourceRoot: dir, profile })
   const featureKinds = ['routes_endpoints', 'graphql', 'workers_jobs', 'services_finders_policies', 'response_shaping', 'search_aggregation', 'tokens_actors']
   const rows = featureKinds.flatMap((kind) => (inv[kind] || []).map((row) => ({ kind, row })))
   const g = openGraph()
+  // one real Lead feature claims a couple of rows; the rest are unconfirmed → passed as archClusters, NOT features
+  const claimed = rows.slice(0, 2), unconfirmed = rows.slice(2)
   const res = buildGraph(g, { project: { id: ID.project(dir), name: 'demo' }, snapshot: { id: ID.snapshot('catchall'), file_count: profile.files }, profile,
-    inventories: inv, featurePlan: [{ domain: 'platform', slug: 'supporting-capabilities', name: 'Supporting Capabilities', rows, planning_method: 'coverage-catchall' }] })
+    inventories: inv, semantic: true, featurePlan: [{ domain: 'identity', slug: 'user-accounts', name: 'User Accounts', rows: claimed, planning_method: 'agent-lead' }],
+    archClusters: [{ domain: 'platform', slug: 'supporting', name: 'Supporting', rows: unconfirmed, planning_method: 'lead-gap-fallback' }] })
   assert.equal(res.gate.status, 'COMPLETE_WITH_GAPS')
-  assert.ok(res.gate.gaps.some((x) => /semantics remain estimated/.test(x)))
+  assert.ok(res.gate.gaps.some((x) => /NOT confirmed as business features|preserved under Architecture/i.test(x)))
+  // the unconfirmed rows are ARCH_CLUSTER nodes, never FEATURE nodes
+  assert.equal(nodesByType(g, 'FEATURE').length, 1, 'only the Lead-confirmed capability is a feature')
+  assert.ok(nodesByType(g, 'ARCH_CLUSTER').length >= 1, 'the unconfirmed rows are architecture')
   fs.rmSync(dir, { recursive: true, force: true })
 })
 

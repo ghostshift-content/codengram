@@ -110,32 +110,27 @@ export function validateLeadPlan(plan, inventories) {
     }
     if (winner) { winner.def.rows.push({ kind: item.kind, row: item.row }); claimed.add(item.key) }
   }
-  const out = definitions.filter((d) => d.rows.length).map(({ explicit, paths, terms, ...d }) => d)
-  // Never drop inventory. Deterministically place anything the Lead missed, then expose that fact in coverage.
-  const missing = sourceRows.filter((r) => !claimed.has(r.key))
-  if (missing.length) {
-    const fallbackInventories = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, []]))
-    for (const m of missing) fallbackInventories[m.kind].push(m.row)
-    out.push(...deterministicSemanticPlan(fallbackInventories).map((f) => ({ ...f, planning_method: 'lead-gap-fallback' })))
-  }
-  // A fallback may resolve to the same business capability as a Lead definition. Coalesce those definitions so
-  // one feature cannot be rendered twice or have its richer Lead metadata overwritten by fallback bookkeeping.
+  const leadFeatures = definitions.filter((d) => d.rows.length).map(({ explicit, paths, terms, ...d }) => d)
+  if (!leadFeatures.length) return null
+  // Coalesce duplicate Lead definitions (same domain/slug) so one capability is never rendered twice.
   const merged = new Map()
-  for (const feature of out) {
+  for (const feature of leadFeatures) {
     const key = `${feature.domain}/${feature.slug}`
     if (!merged.has(key)) { merged.set(key, { ...feature, rows: [...feature.rows] }); continue }
     const current = merged.get(key)
     const seen = new Set(current.rows.map(({ kind, row }) => `${kind}:${row.file}:${row.line}:${row.entry}`))
-    for (const wrapped of feature.rows) {
-      const sig = `${wrapped.kind}:${wrapped.row.file}:${wrapped.row.line}:${wrapped.row.entry}`
-      if (!seen.has(sig)) { seen.add(sig); current.rows.push(wrapped) }
-    }
-    if (current.planning_method !== 'agent-lead' && feature.planning_method === 'agent-lead') {
-      current.name = feature.name; current.purpose = feature.purpose; current.confidence = feature.confidence
-      current.planning_method = feature.planning_method
-    }
+    for (const wrapped of feature.rows) { const sig = `${wrapped.kind}:${wrapped.row.file}:${wrapped.row.line}:${wrapped.row.entry}`; if (!seen.has(sig)) { seen.add(sig); current.rows.push(wrapped) } }
   }
-  return merged.size ? [...merged.values()] : null
+  // STRICT RULE: rows the Lead did NOT confirm are NEVER features. They are preserved as technical ARCHITECTURE
+  // (directory clusters) and disclosed as a coverage gap — never silently dropped, never dressed up as a capability.
+  const missing = sourceRows.filter((r) => !claimed.has(r.key))
+  let archClusters = []
+  if (missing.length) {
+    const fallbackInventories = Object.fromEntries(INVENTORY_KEYS.map((k) => [k, []]))
+    for (const m of missing) fallbackInventories[m.kind].push(m.row)
+    archClusters = deterministicSemanticPlan(fallbackInventories).map((f) => ({ ...f, planning_method: 'lead-gap-fallback' }))
+  }
+  return { features: [...merged.values()], archClusters }
 }
 
 export const semanticTaxonomy = () => []   // no hardcoded taxonomy — features come from the code's structure

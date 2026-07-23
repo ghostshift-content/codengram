@@ -161,7 +161,7 @@ function nodeForRow(g, snapshot_id, featureId, kind, row) {
 
 // Build the full graph (into `g`) from clusters + infra; return reconciliation + gate results.
 // onProgress(ev) receives granular live events (per-feature, shares, infra) for the recon UI.
-export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, semantic = true, ontology = null, readSource = null, onProgress = () => {} }) {
+export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, semantic = true, ontology = null, archClusters = [], readSource = null, onProgress = () => {} }) {
   const sid = snapshot.id
   const before = () => counts(g).nodes
   upsertNode(g, { type: 'PROJECT', id: project.id, name: project.name, snapshot_id: sid, data: { languages: profile.languages, frameworks: profile.frameworks } })
@@ -252,8 +252,10 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
   if (shares) onProgress({ kind: 'shares', count: shares, label: `Linked ${shares} shared-implementation edge(s)` })
 
   if (ontology) buildOntology(g, sid, ontology, features, onProgress)
+  // Rows the Lead did NOT confirm → technical ARCHITECTURE alongside the real features (never published as features).
+  if (archClusters.length) buildArchitecture(g, { project, sid, clusters: archClusters, onProgress })
   buildInfra(g, sid, project, inventories, onProgress)
-  return reconcileAndGate(g, { inventories, features, files: profile.files })
+  return reconcileAndGate(g, { inventories, features, clusters: archClusters, files: profile.files })
 }
 
 // Build the Claude-derived, evidence-validated identity ontology into the graph: separated ACTOR / ROLE / PERMISSION
@@ -362,11 +364,8 @@ function reconcileAndGate(g, { inventories, features, clusters = [], files = nul
         : 'no features mapped — no language plugin matched this stack (unsupported or non-code repository)')
   if (unreconciled) gaps.push(`${unreconciled} inventory item(s) never reached a terminal reconciliation status`)
   if (extraction.unrepresented_source_files > 0) gaps.push(`${extraction.unrepresented_source_files} source file(s) were not represented by any inventory row`)
-  const catchall = features.filter((f) => f.planning_method === 'coverage-catchall' || f.planning_method === 'lead-gap-fallback')
-  if (catchall.length) {
-    const rows = catchall.reduce((n, f) => n + f.rows.length, 0)
-    gaps.push(`${rows} inventory item(s) fell to a deterministic gap-fallback under ${catchall.length} cluster(s) the Lead did not explicitly map — semantics remain estimated for these`)
-  }
+  // Rows the Lead did not confirm are held as ARCHITECTURE (clusters), NOT features — disclosed here, never silently kept.
+  if (clusters.length && unmapped_rows) gaps.push(`${unmapped_rows} inventory item(s) across ${clusters.length} technical cluster(s) were NOT confirmed as business features by the Lead — preserved under Architecture (see architecture.md), not published as capabilities`)
   const status = gaps.length === 0 ? 'COMPLETE' : 'COMPLETE_WITH_GAPS'
   return { coverage, gate: { status, gaps } }
 }
@@ -431,7 +430,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   // into features at any repo size, and (b) the blocked-mode architecture when no semantic plan is produced.
   const candidateClusters = deterministicSemanticPlan(inventories)
   const clusterSummary = summarizeClusters(candidateClusters)
-  let lead = null, featurePlan = null, ontology = null, executedPlanner = 'blocked', semantic = false, model = null
+  let lead = null, featurePlan = null, archClusters = [], ontology = null, executedPlanner = 'blocked', semantic = false, model = null
   let failureReason = null, validation = null
   if (reused) try {
     const sealedPlan = JSON.parse(fs.readFileSync(path.join(snapDir, 'publications', existingPublication.pub, 'feature-plan.json'), 'utf8'))
@@ -445,9 +444,9 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
       resume: existingPublication?.lead_session_id || previousPublication?.lead_session_id || null, onEvent: onProgress })
     lead = r.lead; model = r.model; failureReason = r.failureReason
     if (lead?.plan) {
-      const validated = validateLeadPlan(lead.plan, inventories)   // feature rows: assign every inventory row to a Lead feature
-      if (validated && validated.length) {
-        featurePlan = validated; executedPlanner = 'agent-lead'; semantic = true
+      const validated = validateLeadPlan(lead.plan, inventories)   // { features: Lead-confirmed, archClusters: rows the Lead didn't map }
+      if (validated && validated.features.length) {
+        featurePlan = validated.features; archClusters = validated.archClusters || []; executedPlanner = 'agent-lead'; semantic = true
         // S4: REJECT any ontology entity whose cited evidence does not exist in the frozen snapshot (anti-hallucination),
         // and require roles/permissions/actors to cite AUTHORITATIVE production evidence — not specs/fixtures/strings.
         const vres = validateOntology(lead.plan, makeEvidenceVerifier({ readSource }))
@@ -496,7 +495,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
       staging = openGraph(path.join(attempt, 'staging.sqlite'))
       staging.exec('BEGIN')
       try {
-        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, semantic, ontology, readSource, onProgress })
+        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, semantic, ontology, archClusters, readSource, onProgress })
         staging.exec('COMMIT')
         mission.workstreams = mission.workstreams.map((w) => ({ ...w, status: 'COMPLETED', completed_at: new Date().toISOString() }))
         mission.completed_at = new Date().toISOString()

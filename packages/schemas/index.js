@@ -6,7 +6,7 @@ export const EXPORTER_VERSION = '0.3.0'
 
 // ── Pipeline component versions — the publication fingerprint. Any bump invalidates stale plans and forces
 // regeneration (the extractor version lives in @codengram/inventories as INVENTORY_EXTRACTOR_VERSION). ──────────
-export const PLANNER_VERSION = '1.0.0'              // Lead ontology planner + agentic execution shape
+export const PLANNER_VERSION = '1.1.0'              // Lead ontology planner + agentic execution shape (unconfirmed clusters → architecture, not features)
 export const PROMPT_VERSION = '1.0.0'               // Lead/worker/reconciler prompt contract
 export const IDENTITY_SCHEMA_VERSION = '1.0.0'      // actor/role/permission normalization model
 export const RENDERER_SCHEMA_VERSION = '1.0.0'      // phase1-maps section/column contract

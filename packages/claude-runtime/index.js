@@ -134,7 +134,7 @@ const READ_TOOLS = ['Read', 'Glob', 'Grep']
 
 // One persistent Lead owns project understanding and may delegate read-only reconnaissance to specialist subagents.
 // It returns selectors, not ungrounded graph rows; the caller validates and reconciles every inventory item.
-export async function planRecon({ sourceRoot, profile, inventoryCounts, resume = null, onEvent = () => {} }) {
+export async function planRecon({ sourceRoot, profile, inventoryCounts, candidateClusters = null, resume = null, onEvent = () => {} }) {
   const sdk = await loadSdk()
   const query = sdk?.query || sdk?.default?.query
   if (typeof query !== 'function') return null
@@ -148,9 +148,15 @@ export async function planRecon({ sourceRoot, profile, inventoryCounts, resume =
     interfaces: { description: 'Map REST, GraphQL, jobs, webhooks, imports, exports and integrations.', tools: READ_TOOLS,
       prompt: 'Map external and internal interfaces and connect them to business capabilities. Cite repository paths.', model: 'inherit' },
   }
+  // CONTEXT-BUDGET SCAFFOLDING: for a large repo we hand the Lead a BOUNDED summary of the deterministic technical
+  // clusters (name/domain/paths/counts/samples) and ask it to CONSOLIDATE them into business features — it never has to
+  // read every file, so this scales from a 5-file CLI tool to an 87k-file monolith without blowing the context budget.
+  const clusterBlock = Array.isArray(candidateClusters) && candidateClusters.length
+    ? `\n\nCANDIDATE TECHNICAL CLUSTERS (${candidateClusters.length}) — deterministic directory/namespace groupings extracted from the code. These are STRUCTURE, not business features. CONSOLIDATE them into coherent business capabilities (many clusters may fold into one feature; a cluster named "asset", "concern", "config", "policy" or "serializer" is infrastructure, not a feature). Ground each feature's include_paths in these cluster paths and spot-check source with Read/Grep to confirm:\n${JSON.stringify(candidateClusters).slice(0, 60000)}`
+    : ''
   const prompt = `You are the persistent Lead for a codebase-recon mission.
 Repository profile: ${JSON.stringify(profile)}
-Inventory counts: ${JSON.stringify(inventoryCounts)}
+Inventory counts: ${JSON.stringify(inventoryCounts)}${clusterBlock}
 
 Delegate architecture, domain, identity and interface reconnaissance to the supplied subagents where useful. Then produce ONE repository-specific ONTOLOGY: features, actors, roles, permissions, relationships and honest gaps.
 
@@ -184,14 +190,13 @@ Rules:
       }
       if (msg?.type === 'result') structured = msg.structured_output || structured
     } } finally { clearTimeout(timer) }
-    if (!structured) return null
-    if (!Array.isArray(structured.features) || structured.features.some((f) => !isReconFeatureLabel(f?.name))) {
-      onEvent({ kind: 'lead_fallback', label: 'Lead output crossed the recon-only contract; using deterministic semantic planner' })
-      return null
-    }
-    // AI chooses coherent groupings/selectors. Persisted descriptions are regenerated from grounded inventory. The
-    // identity ontology (actors/roles/permissions/relationships/gaps) passes through for evidence validation downstream.
-    structured = { ...structured, features: structured.features.map((f) => ({ ...f, purpose: '' })) }
+    if (!structured || !Array.isArray(structured.features)) return null
+    // Recon-only contract: DROP any feature whose label reads like a vulnerability finding, but do NOT discard the whole
+    // plan for one bad label (that turned a 40-feature GitLab plan into a total block). Keep the grounded remainder.
+    const total = structured.features.length
+    structured = { ...structured, features: structured.features.filter((f) => isReconFeatureLabel(f?.name)).map((f) => ({ ...f, purpose: '' })) }
+    if (total !== structured.features.length) onEvent({ kind: 'lead_contract', dropped: total - structured.features.length, label: `Dropped ${total - structured.features.length} feature label(s) that crossed the recon-only contract; kept ${structured.features.length}` })
+    if (!structured.features.length) { onEvent({ kind: 'lead_fallback', label: 'Lead produced no recon-safe features' }); return null }
     for (const worker of activeWorkers) onEvent({ kind: 'worker_completed', worker, label: `${worker} worker context returned to Lead` })
     onEvent({ kind: 'lead_planned', session_id: sessionId, count: structured.features?.length || 0,
       roles: structured.roles?.length || 0, actors: structured.actors?.length || 0, permissions: structured.permissions?.length || 0,

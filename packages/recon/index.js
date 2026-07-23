@@ -47,6 +47,21 @@ export function clusterFeatures(inventories) {
   return deterministicSemanticPlan(inventories)
 }
 
+// Context-budget scaffolding for the Lead. A large repo (GitLab = 87k files → hundreds of clusters) can never fit in
+// one context, so we DON'T ask the Lead to read every file. We hand it a BOUNDED summary of the deterministic technical
+// clusters — name, domain, representative paths, per-kind counts, sample entries — and ask it to CONSOLIDATE those
+// clusters into coherent business features + derive the ontology, spot-checking source. The summary scales with the
+// number of clusters (tens–hundreds), not files, so the Lead's task stays inside its budget at any repo size.
+export function summarizeClusters(clusters, { maxClusters = 400, samplesPerCluster = 4 } = {}) {
+  const top = clusters.slice(0, maxClusters)
+  return top.map((c) => {
+    const kinds = {}; for (const { kind } of c.rows) kinds[kind] = (kinds[kind] || 0) + 1
+    const dirs = new Set(); for (const { row } of c.rows) { const p = String(row.file || '').split('/').slice(0, 3).join('/'); if (p) dirs.add(p); if (dirs.size >= 6) break }
+    const samples = c.rows.slice(0, samplesPerCluster).map(({ kind, row }) => `${kind}:${String(row.entry || row.file).slice(0, 60)}`)
+    return { slug: c.slug, domain: c.domain, name: c.name, row_count: c.rows.length, kinds, paths: [...dirs], samples }
+  })
+}
+
 // Roles & permissions are whatever the AUTHORIZATION CODE actually names — derived generically from the captured auth
 // line (annotations/attributes, quoted role names, ROLE_/PERMISSION_ constants, ability symbols). NO fixed vocabulary;
 // the SAME rule runs for every language. The AI Lead refines these when connected.
@@ -412,6 +427,10 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   // Claude Lead (bounded retry) → BLOCKED. A blocked run preserves technical clusters as architecture, never features.
   const requestedPlanner = agentic ? 'agent-lead' : 'blocked'
   const readSource = (rel) => { try { return fs.readFileSync(path.join(src, safeRelPath(rel)), 'utf8') } catch { return '' } }
+  // Deterministic technical clusters — the FACTS. Used as (a) the Lead's context-budget scaffolding to consolidate
+  // into features at any repo size, and (b) the blocked-mode architecture when no semantic plan is produced.
+  const candidateClusters = deterministicSemanticPlan(inventories)
+  const clusterSummary = summarizeClusters(candidateClusters)
   let lead = null, featurePlan = null, ontology = null, executedPlanner = 'blocked', semantic = false, model = null
   let failureReason = null, validation = null
   if (reused) try {
@@ -422,7 +441,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
     }
   } catch {}
   if (!featurePlan && agentic && (planLead || await claudeAvailable())) {
-    const r = await planReconWithRetry({ sourceRoot: src, profile, inventoryCounts: invCounts, fn: planLead,
+    const r = await planReconWithRetry({ sourceRoot: src, profile, inventoryCounts: invCounts, candidateClusters: clusterSummary, fn: planLead,
       resume: existingPublication?.lead_session_id || previousPublication?.lead_session_id || null, onEvent: onProgress })
     lead = r.lead; model = r.model; failureReason = r.failureReason
     if (lead?.plan) {
@@ -444,7 +463,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
     failureReason = 'agentic planning disabled (requested_planner=blocked)'
   }
   // FAIL-CLOSED: no Claude-derived meaning → preserve deterministic technical clusters as ARCHITECTURE (not features).
-  if (!semantic) { featurePlan = deterministicSemanticPlan(inventories); executedPlanner = 'blocked' }
+  if (!semantic) { featurePlan = candidateClusters; executedPlanner = 'blocked' }
   const plannerName = semantic ? (executedPlanner === 'sealed-plan-reuse' ? 'sealed-plan-reuse' : 'claude-agent-sdk') : 'blocked'
   const planProvenance = { requested_planner: requestedPlanner, executed_planner: executedPlanner, semantic,
     lead_session_id: lead?.sessionId || null, model, failure_reason: failureReason,

@@ -298,13 +298,20 @@ const resolveProject = (dataRoot, key) => getProject(dataRoot, key) || listProje
 // A card-ready summary: latest PUBLISHED snapshot's feature count + languages + gate (opens the index briefly).
 function projectSummary(dataRoot, p) {
   const pubd = latestPublished(dataRoot, p.id)
-  const base = { ...p, source: p.source_root, status: pubd ? 'ready' : 'new', features: pubd?.publication?.features || 0, languages: [], snapshot: pubd?.snapshot?.id || null, gate: pubd?.publication?.gate || null, mission: pubd?.publication?.mission_id || null, updated: p.created_at }
+  const pub = pubd?.publication || {}
+  const blocked = pub.state === 'SEMANTIC_PLANNING_BLOCKED'
+  const base = { ...p, source: p.source_root, status: pubd ? 'ready' : 'new', features: pub.features || 0, languages: [],
+    snapshot: pubd?.snapshot?.id || null, gate: pub.gate || null, mission: pub.mission_id || null, updated: p.created_at,
+    // REAL coverage — semantic (mapped to features) is distinct from technical (source represented). NEVER a fake 100%.
+    blocked, semantic: pub.semantic ?? null, executed_planner: pub.executed_planner || null, lead_session: pub.lead_session_id || null,
+    semantic_coverage: pub.semantic_coverage ?? 0, technical_coverage: pub.technical_coverage ?? null,
+    technical_clusters: pub.technical_clusters ?? 0, failure_reason: pub.failure_reason || null }
   let db = null
   if (pubd) try {
     db = openGraph(pubd.indexPath)
     const proj = nodesByType(db, 'PROJECT')[0]
     base.languages = proj?.data?.languages || []
-    base.cov = base.features > 0 ? 100 : 0
+    base.cov = base.semantic_coverage      // the card's headline coverage is SEMANTIC coverage, never features>0?100:0
   } catch { /* index unreadable → status stays as-is */ }
   finally { try { db?.close() } catch {} }
   const live = missions.get(p.id)

@@ -18,6 +18,10 @@ process.on('message', async (msg) => {
     send({ type: 'done', summary: {
       mission: missionId, snapshotId: res.snapshotId, graph: res.graph, features: res.coverage.feature_count,
       gate: res.gate.status, gaps: res.gate.gaps, domains: res.domains, reused: res.publication.reused,
+      blocked: res.gate.status === 'SEMANTIC_PLANNING_BLOCKED', executed_planner: res.publication.executed_planner,
+      lead_session: res.publication.lead_session_id, failure_reason: res.publication.failure_reason,
+      semantic_coverage: res.coverage.semantic_coverage, technical_coverage: res.coverage.technical_coverage,
+      technical_clusters: res.coverage.technical_clusters,
     } })
   } catch (e) {
     send({ type: 'error', message: String((e && e.message) || e) })

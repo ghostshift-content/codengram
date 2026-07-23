@@ -11,10 +11,12 @@ const write = (file, body) => { fs.mkdirSync(path.dirname(file), { recursive: tr
 const jsonl = (rows) => rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '')
 
 // Render everything into <outDir>/phase1-maps. Returns { files:[...], crosscheck:{ ok, graph, markdown } }.
-export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate, inventories } = {}) {
+export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate, inventories, provenance } = {}) {
   const root = path.join(outDir, 'phase1-maps')
   const features = nodesByType(db, 'FEATURE')
   const domains = nodesByType(db, 'DOMAIN')
+  const clusters = nodesByType(db, 'ARCH_CLUSTER')
+  const blocked = gate?.status === 'SEMANTIC_PLANNING_BLOCKED'
   const files = []
   const emit = (rel, body) => { write(path.join(root, rel), body); files.push(rel) }
   const emitQueryJsonl = (rel, sql, map) => {
@@ -55,15 +57,17 @@ export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate
     emit(`ledgers/${featureSlug}.jsonl`, renderFeatureLedger(db, f))
   }
 
-  // consolidated/*
-  emit('consolidated/00_INDEX.md', renderIndex(features, domains))
-  emit('consolidated/feature_coverage_matrix.md', renderCoverage(features, coverage))
-  emit('consolidated/phase1_completion_gate.md', renderGate(gate, coverage))
+  // consolidated/* — the architecture view lists technical clusters (always present when blocked; supplementary
+  // when semantic). Under a blocked run these clusters are the ONLY structural output — never dressed up as features.
+  if (clusters.length) emit('consolidated/architecture.md', renderArchitecture(db, clusters, coverage, gate, blocked))
+  emit('consolidated/00_INDEX.md', renderIndex(features, domains, blocked, clusters))
+  emit('consolidated/feature_coverage_matrix.md', renderCoverage(features, coverage, blocked))
+  emit('consolidated/phase1_completion_gate.md', renderGate(gate, coverage, provenance))
 
   // top-level
   const c = counts(db)
-  emit('README.md', renderReadme(project, snapshot, c, features))
-  emit('AI_CONTEXT.md', renderAiContext(project, snapshot, features, c))
+  emit('README.md', renderReadme(project, snapshot, c, features, { blocked, coverage, clusters, provenance }))
+  emit('AI_CONTEXT.md', renderAiContext(project, snapshot, features, c, { blocked, coverage, clusters }))
 
   // §14.9 cross-check each family independently; equal sums must not hide one missing node plus one extra edge.
   const md = projectedNodes + projectedEdges, graph = c.nodes + c.edges
@@ -73,8 +77,16 @@ export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate
     `# Cross-check\n\n- graph nodes: ${c.nodes}; projected nodes: ${projectedNodes}\n- graph edges: ${c.edges}; projected edges: ${projectedEdges}\n- graph nodes+edges: ${graph}\n- projected nodes+edges: ${md}\n- **match: ${crosscheck.ok ? 'YES' : 'NO'}**\n`)
   // Write the manifest last so its inventory includes the cross-check and the manifest itself.
   const manifestFiles = [...files, 'manifest.json']
+  // The publication fingerprint the spec requires: planner/session/model evidence + all component versions + the
+  // gate outcome, so a stale plan or a version bump is detectable and another AI session can trust the provenance.
   emit('manifest.json', JSON.stringify({ exporter_version: EXPORTER_VERSION, project: project?.id,
-    snapshot: snapshot?.id, counts: c, files: manifestFiles }, null, 2))
+    snapshot: snapshot?.id, counts: c, gate: gate?.status || null,
+    semantic: provenance?.semantic ?? null, requested_planner: provenance?.requested_planner ?? null,
+    executed_planner: provenance?.executed_planner ?? null, lead_session_id: provenance?.lead_session_id ?? null,
+    model: provenance?.model ?? null, failure_reason: provenance?.failure_reason ?? null,
+    validation_result: provenance?.validation_result ?? null, versions: provenance?.versions ?? null,
+    semantic_coverage: coverage?.semantic_coverage ?? null, technical_coverage: coverage?.technical_coverage ?? null,
+    feature_count: features.length, technical_clusters: clusters.length, files: manifestFiles }, null, 2))
   return { root, files, crosscheck }
 }
 
@@ -243,9 +255,24 @@ function renderReviewContext(entries, auth, models, flows) {
   if (!leads.length) leads.push('No additional structural lead generated; inspect cited paths when deeper context is required.')
   return leads.map((x, i) => `${i + 1}. ${x}`).join('\n')
 }
-const renderIndex = (features, domains) => `# Feature Index\n\n${domains.map((d) =>
+// Architecture view — the deterministic technical clusters (directory/namespace groupings). These are FACTS about
+// code structure, explicitly NOT confirmed business features. Present under a blocked run; supplementary otherwise.
+function renderArchitecture(db, clusters, coverage, gate, blocked) {
+  const rowsFor = (c) => db.prepare(`SELECT COUNT(*) n FROM edges WHERE src=?`).get(c.id)?.n || c.data.row_count || 0
+  const banner = blocked
+    ? `> **SEMANTIC PLANNING BLOCKED.** No Claude Lead was available to derive repository meaning, so NO business\n> features were produced. Below are the deterministic **technical clusters** (directory/namespace groupings) —\n> code structure only, NOT confirmed capabilities. Connect Claude and re-scan to derive real features, actors,\n> roles and permissions.\n`
+    : `> Supplementary technical clustering. The authoritative capabilities are the Lead-derived features; these\n> directory groupings are provided for structural navigation only.\n`
+  const byDomain = new Map()
+  for (const c of clusters) { const d = c.data.domain || 'core'; if (!byDomain.has(d)) byDomain.set(d, []); byDomain.get(d).push(c) }
+  const sections = [...byDomain.entries()].sort().map(([d, cs]) =>
+    `## ${d}\n\n| Technical cluster | Rows | Method |\n|---|---|---|\n${cs.sort((a, b) => (a.name > b.name ? 1 : -1)).map((c) => `| ${c.name} | ${rowsFor(c)} | ${c.data.planning_method || 'module-cohesion'} |`).join('\n')}`)
+  return `# Architecture — Technical Clusters (NOT business features)\n\n${banner}\n- Technical clusters: ${clusters.length}\n- Technical coverage (source files represented): ${coverage?.technical_coverage ?? '?'}%\n- Semantic coverage (mapped to features): ${coverage?.semantic_coverage ?? 0}%\n\n${sections.join('\n\n')}\n`
+}
+const renderIndex = (features, domains, blocked, clusters = []) => blocked
+  ? `# Feature Index\n\n> **No business features** — semantic planning was blocked (see \`phase1_completion_gate.md\`).\n> ${clusters.length} technical cluster(s) are listed in \`architecture.md\` (code structure, not capabilities).\n> Connect Claude and re-scan to derive features.\n`
+  : `# Feature Index\n\n${domains.map((d) =>
   `## ${d.name}\n${features.filter((f) => f.data.domain === (d.id.replace(/^domain:/, ''))).map((f) => `- [${f.name}](../features/${f.data.slug}.md)`).join('\n')}`).join('\n\n')}\n`
-const renderCoverage = (features, coverage) => `# Coverage Matrix\n\n- Features: ${features.length}\n- Mapped rows: ${coverage?.feature_rows ?? '?'}\n- Shared infrastructure rows: ${coverage?.infra_rows ?? '?'}\n\n| Feature | Rows |\n|---|---|\n${features.map((f) => `| ${f.name} | ${f.data.row_count || 0} |`).join('\n')}\n`
-const renderGate = (gate, coverage) => `# Completion Gate\n\n- Status: **${gate?.status || 'UNKNOWN'}**\n- Gaps: ${(gate?.gaps || []).length ? gate.gaps.join('; ') : 'none'}\n- Terminal reconciliation: ${JSON.stringify(coverage?.terminal || {})}\n`
-const renderReadme = (project, snapshot, c, features) => `# ${project?.name || 'Codengram'} — code recon brain\n\nRecon only — structure & understanding, never vulnerability detection.\n\n- Snapshot: \`${snapshot?.id || ''}\`\n- Graph: ${c.nodes} nodes · ${c.edges} edges · ${c.claims} provenance claims\n- Features: ${features.length}\n\nOpen \`consolidated/00_INDEX.md\` for the feature index, or load \`graph/nodes.jsonl\` + \`graph/edges.jsonl\` into any tool.\n`
-const renderAiContext = (project, snapshot, features, c) => `# AI_CONTEXT — ${project?.name || 'project'}\n\nYou are reading a **code reconnaissance brain** produced by Codengram (recon only; it never asserts vulnerabilities).\nEvery claim is grounded to a file:line in the frozen snapshot. Coverage gaps are labelled, not hidden.\n\n- Snapshot: \`${snapshot?.id || ''}\` — ${c.nodes} nodes, ${c.edges} edges.\n- ${features.length} features across ${new Set(features.map((f) => f.data.domain)).size} domains.\n\nTo answer a question: start with \`consolidated/00_INDEX.md\`, read the relevant compact \`features/<slug>.md\`, then use \`ledgers/<slug>.jsonl\` for every mapped row and its source evidence. Follow relationships in \`graph/edges.jsonl\` (canonical direction from→to). The Markdown feature map is intentionally bounded for humans; the JSONL ledger is exhaustive. If a fact isn't present, say "coverage gap" — do not guess.\n`
+const renderCoverage = (features, coverage, blocked) => `# Coverage Matrix\n\n- Semantic coverage (mapped to features): ${coverage?.semantic_coverage ?? 0}%\n- Technical coverage (source represented): ${coverage?.technical_coverage ?? '?'}%\n- Features: ${features.length}${blocked ? ' (semantic planning BLOCKED — see architecture.md)' : ''}\n- Mapped rows: ${coverage?.feature_rows ?? '?'}\n- Shared infrastructure rows: ${coverage?.infra_rows ?? '?'}\n\n| Feature | Rows |\n|---|---|\n${features.map((f) => `| ${f.name} | ${f.data.row_count || 0} |`).join('\n') || '_none — no business features derived_'}\n`
+const renderGate = (gate, coverage, provenance) => `# Completion Gate\n\n- Status: **${gate?.status || 'UNKNOWN'}**\n- Executed planner: \`${provenance?.executed_planner || 'unknown'}\`${provenance?.lead_session_id ? ` · Lead session \`${provenance.lead_session_id}\`` : ''}\n- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%\n${provenance?.failure_reason ? `- Failure reason: ${provenance.failure_reason}\n` : ''}- Gaps: ${(gate?.gaps || []).length ? gate.gaps.join('; ') : 'none'}\n- Terminal reconciliation: ${JSON.stringify(coverage?.terminal || {})}\n`
+const renderReadme = (project, snapshot, c, features, { blocked, coverage, clusters = [], provenance } = {}) => `# ${project?.name || 'Codengram'} — code recon brain\n\nRecon only — structure & understanding, never vulnerability detection.\n${blocked ? `\n> ⚠️ **SEMANTIC PLANNING BLOCKED** (${provenance?.failure_reason || 'Claude Lead unavailable'}).\n> No business features were derived — only deterministic technical architecture. See \`consolidated/architecture.md\`.\n> Connect Claude (a logged-in Claude Agent SDK) and re-scan to map features, actors, roles and permissions.\n` : ''}\n- Snapshot: \`${snapshot?.id || ''}\`\n- Graph: ${c.nodes} nodes · ${c.edges} edges · ${c.claims} provenance claims\n- Features: ${features.length}${blocked ? ` · Technical clusters: ${clusters.length}` : ''}\n- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%\n\nOpen \`consolidated/00_INDEX.md\`${blocked ? ' / `consolidated/architecture.md`' : ''}, or load \`graph/nodes.jsonl\` + \`graph/edges.jsonl\` into any tool.\n`
+const renderAiContext = (project, snapshot, features, c, { blocked, coverage, clusters = [] } = {}) => `# AI_CONTEXT — ${project?.name || 'project'}\n\nYou are reading a **code reconnaissance brain** produced by Codengram (recon only; it never asserts vulnerabilities).\nEvery claim is grounded to a file:line in the frozen snapshot. Coverage gaps are labelled, not hidden.\n${blocked ? `\n**SEMANTIC PLANNING BLOCKED** — no Claude Lead derived meaning, so there are NO business features, actors, roles or permissions in this bundle. What IS here: deterministic inventories (\`inventories/\`), ${clusters.length} technical clusters (\`consolidated/architecture.md\`), and the raw graph. Do NOT treat a technical cluster as a business capability. Treat every absent semantic fact as "coverage gap — Claude was not available", never as "none exist".\n` : ''}\n- Snapshot: \`${snapshot?.id || ''}\` — ${c.nodes} nodes, ${c.edges} edges.\n- ${features.length} features across ${new Set(features.map((f) => f.data.domain)).size} domains.\n- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%.\n\nTo answer a question: start with \`consolidated/00_INDEX.md\`, read the relevant compact \`features/<slug>.md\`, then use \`ledgers/<slug>.jsonl\` for every mapped row and its source evidence. Follow relationships in \`graph/edges.jsonl\` (canonical direction from→to). The Markdown feature map is intentionally bounded for humans; the JSONL ledger is exhaustive. If a fact isn't present, say "coverage gap" — do not guess.\n`

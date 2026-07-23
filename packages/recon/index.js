@@ -458,7 +458,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
       if (typeof render !== 'function') throw new Error('scanSnapshot requires a render function to publish (graph-only publication is not allowed)')
       // Render + integrity-validate ON THE ATTEMPT before sealing. A render/crosscheck failure aborts the publish.
       onPhase({ phase: 'render', label: 'Generating + validating phase1-maps' })
-      crosscheck = (render(index, attempt, { project, snapshot: { id: sid }, coverage: result.coverage, gate: result.gate, inventories, missionId }) || {}).crosscheck || { ok: false, note: 'render returned no crosscheck' }
+      crosscheck = (render(index, attempt, { project, snapshot: { id: sid }, coverage: result.coverage, gate: result.gate, inventories, missionId, provenance: planProvenance }) || {}).crosscheck || { ok: false, note: 'render returned no crosscheck' }
     } finally {
       try { index?.close() } catch {}
       try { staging?.close() } catch {}

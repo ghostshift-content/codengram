@@ -68,4 +68,17 @@ fail-closed states, the separated identity model, and the agentic Lead/worker/re
 ### S10 — GitLab acceptance (real Lead run) vs phase1-maps 3.
 
 Progress log:
-- [ ] S1 …
+- [x] S1 — contract layer (fail-closed states, identity model, versions, evidence authority). 85 tests.
+- [x] S2 — fail-closed planning: no silent deterministic-features fallback; blocked → ARCH_CLUSTER architecture;
+      SEMANTIC_PLANNING_BLOCKED gate; semantic vs technical coverage; expanded fingerprint; provenance persisted.
+- [x] S5 (slice) — identity gated to authoritative production/config evidence (kills roles-from-specs).
+- [x] S7 (slice) — renderer honest for blocked: architecture.md (clusters ≠ features), blocked banners in
+      README/AI_CONTEXT/gate, extended manifest fingerprint (planner/session/model/versions/coverage).
+- [ ] S3 — expanded Lead ontology (actors/roles/permissions/relationships/evidence) + agentic workers/reconciler.
+- [ ] S4 — evidence validation (verify cited file:line/symbol exist; reject hallucinations).
+- [ ] S5 (full) — identity normalization package (separate Actor/Role/Permission/…); Lead-derived roles.
+- [ ] S6 — gate never COMPLETE without Lead+reconciliation; full provenance surfaces.
+- [ ] S7 (full) — 8 entry channels, 4 empty-state tokens, roles/ matrices, byte-align to phase1-maps 3.
+- [ ] S8 — UI: sessions, semantic vs technical coverage, blocked state, real matrices; kill false cov=100.
+- [ ] S9 — stack matrix (Rails/Express/FastAPI/GraphQL/React/Spring/Django/Go/PHP/CLI/unknown/polyglot) + adversarial.
+- [ ] S10 — GitLab acceptance vs phase1-maps 3.

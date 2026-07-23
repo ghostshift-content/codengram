@@ -272,18 +272,16 @@ test('#3 a render/integrity failure aborts the publish — the previous brain is
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 
-test('roles/permissions are derived from the authorization code, never a fixed vocabulary', () => {
+test('deterministic extraction surfaces abilities but NEVER fabricates roles — roles are the Lead ontology only', () => {
   const kinds = ['routes_endpoints','rest_api','graphql','workers_jobs','services_finders_policies','response_shaping','downloads_uploads_exports','search_aggregation','tokens_actors','processes_ipc','datastores_integrations']
   const inv = Object.fromEntries(kinds.map((k) => [k, []]))
-  inv.tokens_actors.push({ file: 'lib/Controller/FilesController.php', line: 3, entry: '#[AdminRequired] #[PublicPage]', detail: 'auth' })
-  inv.tokens_actors.push({ file: 'src/UserApi.java', line: 5, entry: '@RolesAllowed("EDITOR") hasRole(\'MODERATOR\')', detail: 'auth' })
-  inv.tokens_actors.push({ file: 'app/Http/routes.php', line: 8, entry: '$user->hasRole("billing-admin")', detail: 'auth' })
+  inv.tokens_actors.push({ file: 'app/policies/issue_policy.rb', line: 3, entry: 'can? :read_issue; authorize! :update_issue', detail: 'permission' })
+  inv.tokens_actors.push({ file: 'app/policies/authorization.rb', line: 5, entry: 'def permission; "Devise/Orm/ActiveRecord"; end', detail: 'auth' })
   const g = openGraph()
-  buildGraph(g, { project: { id: 'project:t', name: 't' }, snapshot: { id: 'snapshot:t', file_count: 3 }, profile: { languages: ['PHP','Java'] }, inventories: inv })
-  const roles = nodesByType(g, 'ROLE').map((r) => r.name)
-  // exactly the tokens the code names — nothing invented
-  assert.ok(roles.some((r) => /AdminRequired/i.test(r)) && roles.some((r) => /PublicPage/i.test(r)), 'PHP attributes surfaced')
-  assert.ok(roles.some((r) => /EDITOR/i.test(r)) && roles.some((r) => /MODERATOR/i.test(r)), 'annotation + hasRole literals surfaced')
-  assert.ok(roles.some((r) => /billing/i.test(r)), 'quoted role name surfaced')
-  assert.ok(!roles.some((r) => /^Owner$/i.test(r)), 'no hardcoded role appears when the code does not name it')
+  buildGraph(g, { project: { id: 'project:t', name: 't' }, snapshot: { id: 'snapshot:t', file_count: 2 }, profile: { languages: ['Ruby'] }, inventories: inv })
+  // abilities (grounded :symbol facts) ARE extracted
+  const perms = nodesByType(g, 'PERMISSION').map((p) => p.name)
+  assert.ok(perms.some((p) => /read issue/i.test(p)) && perms.some((p) => /update issue/i.test(p)), 'ability symbols surfaced as permissions')
+  // STRICT RULE: with NO Lead ontology, ZERO roles are fabricated — not "Authorization", not "Permission", not a string
+  assert.equal(nodesByType(g, 'ROLE').length, 0, 'a deterministic pass never invents a role; roles require the Lead ontology')
 })

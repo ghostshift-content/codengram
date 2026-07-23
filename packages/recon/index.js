@@ -83,15 +83,12 @@ function accessTokensFrom(text) {
   return { roles: [...roles].slice(0, 15), perms: [...perms].slice(0, 15) }
 }
 
+// STRICT RULE: only Claude derives repository MEANING. A ROLE is meaning — a deterministic string scraper cannot tell
+// "Owner" (a role) from "Authorization" / "Permission" / "Devise/Orm/ActiveRecord" / an error-message fragment. So this
+// extracts only ABILITIES (grounded `can? :symbol` facts), never ROLES. Roles come exclusively from the evidence-
+// validated Lead ontology (buildOntology). Ability→role wiring is likewise the Lead's job.
 function addIdentityContext(g, snapshot_id, featureId, authNodeId, row) {
-  const { roles, perms } = accessTokensFrom(String(row.entry || ''))
-  for (const role of roles) {
-    const roleId = ID.role(role)
-    upsertNode(g, { type: 'ROLE', id: roleId, name: titleize(role.replace(/[_-]+/g, ' ')), snapshot_id, data: { source: row.file, line: row.line } })
-    upsertEdge(g, { type: 'REQUIRES_ROLE', from: authNodeId || featureId, to: roleId, snapshot_id })
-    addClaim(g, { id: `c:${roleId}:observed:${row.file}:${row.line}`, node_id: roleId, field: 'observed', snapshot_id,
-      file: row.file, line_start: row.line, confidence: 'medium', method: 'grep' })
-  }
+  const { perms } = accessTokensFrom(String(row.entry || ''))
   for (const permission of perms) {
     const permissionId = `permission:${slug(permission)}`
     upsertNode(g, { type: 'PERMISSION', id: permissionId, name: permission.replace(/[_-]+/g, ' '), snapshot_id,

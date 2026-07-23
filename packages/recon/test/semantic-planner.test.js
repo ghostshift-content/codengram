@@ -41,6 +41,7 @@ test('Lead selectors use strongest-match assignment, not feature-list order', ()
   const { features } = validateLeadPlan(plan, inv)
   const issues = features.find((f) => f.slug === 'issues-work-items')
   assert.equal(issues.rows.length, 2, 'specific issue evidence wins over broad user selector')
+  assert.equal(issues.purpose, 'Issue workflows', 'Claude-derived purpose is preserved')
   assert.equal(rowCount(features), 2, 'each row is assigned exactly once')
 })
 

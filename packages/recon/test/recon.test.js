@@ -42,7 +42,10 @@ test('clustering collapses related rows into one capability (singularized noun)'
 // validator can ground against the fixture's rows (broad include_paths capture every app/lib/config row into one feature).
 const fakeLead = (features) => async () => ({ plan: { features }, sessionId: 'session:test-lead', model: 'claude-test' })
 const fakeLeadFull = (plan) => async () => ({ plan, sessionId: 'session:test-lead', model: 'claude-test' })
-const railsLead = fakeLead([{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity', purpose: '', include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user', 'issue', 'api'] }])
+const railsLead = fakeLead([{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity',
+  purpose: 'Account access, profile handling, and user lifecycle exposed by the application.',
+  include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user', 'issue', 'api'],
+  evidence: [{ file: 'app/controllers/users_controller.rb', line: 1, symbol: 'UsersController' }] }])
 
 test('buildGraph produces a connected, provenance-backed brain with SHARES edges', () => {
   const dir = railsFixture()
@@ -156,8 +159,10 @@ test('the Lead ontology builds source-grounded actors/roles/permissions; halluci
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-onto-'))
   const project = createProject(dataRoot, dir)
   const lead = fakeLeadFull({
-    features: [{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity', purpose: '', include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user'], actors: ['Member'] }],
-    actors: [{ name: 'Member', obtained_via: 'project membership', hierarchical: true, evidence: [{ file: 'app/controllers/users_controller.rb', line: 1 }] }],
+    features: [{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity', purpose: 'User account lifecycle',
+      include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user'], actors: ['Member'], permissions: ['read_user'],
+      evidence: [{ file: 'app/controllers/users_controller.rb', line: 1, symbol: 'UsersController' }] }],
+    actors: [{ name: 'Member', kind: 'human', obtained_via: 'project membership', hierarchical: true, evidence: [{ file: 'app/controllers/users_controller.rb', line: 1 }] }],
     roles: [
       { name: 'Admin', hierarchical: true, enables: ['read_user'], evidence: [{ file: 'app/policies/user_policy.rb', line: 1 }] },  // grounded (production)
       { name: 'Ghost', evidence: [{ file: 'does/not/exist.rb', line: 1 }] },                                                        // hallucinated file → rejected
@@ -272,16 +277,15 @@ test('#3 a render/integrity failure aborts the publish — the previous brain is
   fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 
-test('deterministic extraction surfaces abilities but NEVER fabricates roles — roles are the Lead ontology only', () => {
+test('deterministic extraction preserves auth facts but NEVER fabricates semantic roles or permissions', () => {
   const kinds = ['routes_endpoints','rest_api','graphql','workers_jobs','services_finders_policies','response_shaping','downloads_uploads_exports','search_aggregation','tokens_actors','processes_ipc','datastores_integrations']
   const inv = Object.fromEntries(kinds.map((k) => [k, []]))
   inv.tokens_actors.push({ file: 'app/policies/issue_policy.rb', line: 3, entry: 'can? :read_issue; authorize! :update_issue', detail: 'permission' })
   inv.tokens_actors.push({ file: 'app/policies/authorization.rb', line: 5, entry: 'def permission; "Devise/Orm/ActiveRecord"; end', detail: 'auth' })
   const g = openGraph()
   buildGraph(g, { project: { id: 'project:t', name: 't' }, snapshot: { id: 'snapshot:t', file_count: 2 }, profile: { languages: ['Ruby'] }, inventories: inv })
-  // abilities (grounded :symbol facts) ARE extracted
-  const perms = nodesByType(g, 'PERMISSION').map((p) => p.name)
-  assert.ok(perms.some((p) => /read issue/i.test(p)) && perms.some((p) => /update issue/i.test(p)), 'ability symbols surfaced as permissions')
-  // STRICT RULE: with NO Lead ontology, ZERO roles are fabricated — not "Authorization", not "Permission", not a string
+  assert.equal(nodesByType(g, 'PERMISSION').length, 0, 'permission meaning requires the Claude ontology')
+  // STRICT RULE: with NO Lead ontology, ZERO roles are fabricated.
   assert.equal(nodesByType(g, 'ROLE').length, 0, 'a deterministic pass never invents a role; roles require the Lead ontology')
+  assert.ok(nodesByType(g, 'AUTH_CHECK').length > 0, 'raw authorization evidence remains available for Claude to interpret')
 })

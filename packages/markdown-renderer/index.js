@@ -48,6 +48,7 @@ export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate
     const keys = Object.keys(inventories)
     keys.forEach((k, i) => emit(`inventories/${String(i + 1).padStart(2, '0')}_${k}.txt`,
       (inventories[k] || []).map((r) => `${r.file}:${r.line} · ${r.entry}${r.detail ? ` · ${r.detail}` : ''}`).join('\n') + (inventories[k]?.length ? '\n' : '')))
+    emit('inventories/00_MANIFEST.md', renderInventoryManifest(inventories, db))
   }
 
   // features/<slug>.md — the 13-section contract, projected from the graph (§13c)
@@ -60,12 +61,20 @@ export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate
   // consolidated/* — the architecture view lists technical clusters (always present when blocked; supplementary
   // when semantic). Under a blocked run these clusters are the ONLY structural output — never dressed up as features.
   // roles/ — the subject axis (actors + role ladder + role→ability matrix), built from the evidence-validated
-  // ontology. Present only when the Lead derived identity; a blocked run has none (correctly emits nothing here).
+  // ontology. These contract files are always emitted; an unproved identity model is an explicit gap, not a missing
+  // directory that a downstream reviewer could mistake for "no roles exist".
   const roleNodes = nodesByType(db, 'ROLE'), actorNodes = nodesByType(db, 'ACTOR')
-  if (roleNodes.length || actorNodes.length) { const r = renderRoles(db, roleNodes, actorNodes); emit('roles/role-structure.md', r.structure); emit('roles/role-ability-matrix.md', r.matrix) }
+  const roleArtifacts = renderRoles(db, roleNodes, actorNodes)
+  emit('roles/role-structure.md', roleArtifacts.structure)
+  emit('roles/role-ability-matrix.md', roleArtifacts.matrix)
+  emit('roles/role_authz_source_files.txt', roleArtifacts.sourceFiles)
+  emit('roles/role_structure_hints.txt', roleArtifacts.hints)
   if (clusters.length) emit('consolidated/architecture.md', renderArchitecture(db, clusters, coverage, gate, blocked))
-  emit('consolidated/00_INDEX.md', renderIndex(features, domains, blocked, clusters))
+  emit('consolidated/00_INDEX.md', renderIndex(features, domains, blocked, clusters, db))
   emit('consolidated/feature_coverage_matrix.md', renderCoverage(features, coverage, blocked))
+  emit('consolidated/source_inventory_coverage_matrix.md', renderSourceCoverage(db, inventories))
+  emit('consolidated/same_functionality_cross_feature_map.md', renderSameFunctionality(db, features, clusters))
+  emit('consolidated/phase2_review_queue.md', renderPhase2Queue(db, features, blocked))
   emit('consolidated/phase1_completion_gate.md', renderGate(gate, coverage, provenance))
 
   // top-level
@@ -88,6 +97,7 @@ export function renderPhase1Maps(db, outDir, { project, snapshot, coverage, gate
     semantic: provenance?.semantic ?? null, requested_planner: provenance?.requested_planner ?? null,
     executed_planner: provenance?.executed_planner ?? null, lead_session_id: provenance?.lead_session_id ?? null,
     model: provenance?.model ?? null, failure_reason: provenance?.failure_reason ?? null,
+    recon_skill: provenance?.recon_skill ?? null,
     validation_result: provenance?.validation_result ?? null, versions: provenance?.versions ?? null,
     semantic_coverage: coverage?.semantic_coverage ?? null, technical_coverage: coverage?.technical_coverage ?? null,
     feature_count: features.length, technical_clusters: clusters.length, files: manifestFiles }, null, 2))
@@ -275,6 +285,104 @@ function renderReviewContext(entries, auth, models, flows) {
   if (!leads.length) leads.push('No additional structural lead generated; inspect cited paths when deeper context is required.')
   return leads.map((x, i) => `${i + 1}. ${x}`).join('\n')
 }
+
+function renderInventoryManifest(inventories, db) {
+  const terminal = new Map(db.prepare('SELECT kind,status,COUNT(*) n FROM reconciliation GROUP BY kind,status ORDER BY kind,status')
+    .all().map((r) => [`${r.kind}:${r.status}`, r.n]))
+  const rows = Object.entries(inventories || {}).map(([kind, items], i) => {
+    const statuses = [...terminal.entries()].filter(([key]) => key.startsWith(`${kind}:`))
+      .map(([key, n]) => `${key.slice(kind.length + 1)}=${n}`).join(', ') || 'not reconciled'
+    return `| ${String(i + 1).padStart(2, '0')} | \`${kind}\` | ${(items || []).length} | ${cell(statuses)} |`
+  })
+  return `# Source Inventory Manifest
+
+> Deterministic, stack-neutral source facts. These inventories do not define product features, roles, or permissions;
+> Claude derives those semantics and every row is reconciled separately.
+
+| # | Inventory | Rows | Terminal reconciliation |
+|---|---|---:|---|
+${rows.join('\n')}
+
+## Reconciliation rule
+
+Every row must terminate as \`MAPPED_TO_FEATURE\`, \`SHARED_INFRASTRUCTURE\`,
+\`UNCLEAR_COVERAGE_GAP\`, \`DEAD_OR_UNREACHABLE\`, or \`EXTRACTOR_UNSUPPORTED\`. An absent row is never treated as
+proof that a surface does not exist.
+`
+}
+
+function renderSourceCoverage(db, inventories) {
+  const grouped = db.prepare('SELECT kind,status,COUNT(*) n FROM reconciliation GROUP BY kind,status ORDER BY kind,status').all()
+  const byKind = new Map()
+  for (const row of grouped) {
+    if (!byKind.has(row.kind)) byKind.set(row.kind, { total: 0, statuses: [] })
+    const item = byKind.get(row.kind)
+    item.total += row.n
+    item.statuses.push(`${row.status}=${row.n}`)
+  }
+  for (const [kind, rows] of Object.entries(inventories || {})) if (!byKind.has(kind)) {
+    byKind.set(kind, { total: (rows || []).length, statuses: ['not reconciled'] })
+  }
+  return `# Source Inventory Coverage Matrix
+
+| Inventory | Extracted rows | Reconciliation |
+|---|---:|---|
+${[...byKind.entries()].map(([kind, item]) => `| \`${kind}\` | ${item.total} | ${cell(item.statuses.join(', '))} |`).join('\n')}
+
+Rows mapped to technical architecture during a blocked scan remain coverage gaps; they are not semantic feature coverage.
+`
+}
+
+function renderSameFunctionality(db, features, clusters) {
+  const names = new Map(features.map((f) => [f.id, f.name]))
+  const shares = db.prepare("SELECT src,dst,data FROM edges WHERE type='SHARES_IMPLEMENTATION_WITH' ORDER BY src,dst").all()
+    .filter((e) => names.has(e.src) && names.has(e.dst))
+  const sharedNodes = db.prepare(`SELECT n.type,n.name,n.data,COUNT(DISTINCT e.src) users
+    FROM nodes n JOIN edges e ON e.dst=n.id
+    WHERE n.type IN ('SERVICE','AUTH_CHECK','MODEL') GROUP BY n.id HAVING users > 1 ORDER BY users DESC,n.name`).all()
+  return `# Same-Functionality & Shared-Implementation Map
+
+## Feature siblings
+
+${shares.length ? `| Feature A | Feature B | Evidence relationship |\n|---|---|---|\n${shares.map((e) => `| ${cell(names.get(e.src))} | ${cell(names.get(e.dst))} | shared implementation |`).join('\n')}` : '_No source-grounded sibling relationship was established._'}
+
+## Shared infrastructure
+
+${sharedNodes.length ? `| Kind | Component | Feature users |\n|---|---|---:|\n${sharedNodes.map((n) => `| ${n.type} | ${cell(n.name)} | ${n.users} |`).join('\n')}` : '_No component was linked to multiple mapped features._'}
+
+## Technical clusters not accepted as features
+
+${clusters.length ? clusters.map((c) => `- ${c.name} (${c.data?.row_count || 0} rows) — architecture/coverage gap`).join('\n') : '_none_'}
+`
+}
+
+function renderPhase2Queue(db, features, blocked) {
+  if (blocked) return `# Phase 2 Review Queue
+
+> **BLOCKED:** semantic feature planning did not complete. Phase 2 must not start from technical directory clusters.
+> Re-run reconnaissance with a working Claude session first.
+`
+  const rows = features.map((f) => {
+    const counts = Object.fromEntries(db.prepare(`SELECT n.type,COUNT(*) n FROM nodes n JOIN edges e ON e.dst=n.id
+      WHERE e.src=? GROUP BY n.type`).all(f.id).map((r) => [r.type, r.n]))
+    const entryCount = (counts.ENDPOINT || 0) + (counts.ROUTE || 0) + (counts.GRAPHQL_OPERATION || 0) + (counts.JOB || 0)
+    const authCount = counts.AUTH_CHECK || 0
+    const priority = entryCount > 0 && authCount === 0 ? 'HIGH' : entryCount > 20 ? 'HIGH' : entryCount > 0 ? 'MEDIUM' : 'LOW'
+    const lead = entryCount > 0 && authCount === 0
+      ? 'Trace shared authentication, authorization, ownership, and object scoping for every entry.'
+      : 'Continue from the feature ledger; verify each entry independently and do not inherit shared-control conclusions.'
+    return { f, entryCount, authCount, priority, lead }
+  }).sort((a, b) => ['HIGH', 'MEDIUM', 'LOW'].indexOf(a.priority) - ['HIGH', 'MEDIUM', 'LOW'].indexOf(b.priority) || b.entryCount - a.entryCount)
+  return `# Phase 2 Review Queue
+
+> Structural review leads only. These are not vulnerability findings.
+
+| Priority | Feature | Entry rows | Auth checks | Lead |
+|---|---|---:|---:|---|
+${rows.map((r) => `| ${r.priority} | [${cell(r.f.name)}](../features/${r.f.data.slug}.md) | ${r.entryCount} | ${r.authCount} | ${cell(r.lead)} |`).join('\n')}
+`
+}
+
 // roles/ — the identity subject axis. role-structure.md = actor catalog + role ladder (obtained-via, hierarchical,
 // source). role-ability-matrix.md = ability (permission) × role grid with ✓ where a role enables that ability, from
 // the ontology's AUTHORIZED_BY (role→permission) wiring. Every row/name is source-grounded (Lead ontology, validated).
@@ -291,7 +399,11 @@ function renderRoles(db, roles, actors) {
     `## Actors (${actors.length})`, '',
     actors.length ? `| Actor | Obtained via | Hierarchical | Source |\n|---|---|---|---|\n${actors.map((a) => `| ${cell(a.name)} | ${cell(a.data?.obtained_via || '—')} | ${a.data?.hierarchical ? 'yes' : 'no'} |${cite(a)} |`).join('\n')}` : '_none established_', '',
     `## Role ladder (${roles.length})`, '',
-    roles.length ? `| Role | Hierarchical | Abilities enabled | Source |\n|---|---|---|---|\n${roles.map((r) => `| ${cell(roleName(r))} | ${r.data?.hierarchical ? 'yes' : 'no'} | ${enables.get(r.id)?.size || 0} |${cite(r)} |`).join('\n')}` : '_none established_', '',
+    roles.length ? `| Role | Scope | Obtained via | Hierarchical | Abilities enabled | Source |\n|---|---|---|---|---:|---|\n${roles.map((r) => `| ${cell(roleName(r))} | ${cell(r.data?.scope || 'not mapped')} | ${cell(r.data?.obtained_via || 'not mapped')} | ${r.data?.hierarchical ? 'yes' : 'no'} | ${enables.get(r.id)?.size || 0} |${cite(r)} |`).join('\n')}` : '_COVERAGE GAP — no authoritative role definition was established._', '',
+    `## Token / non-human actors`, '',
+    actors.filter((a) => a.data?.kind && a.data.kind !== 'human').length
+      ? `| Actor | Kind | Obtained via | Scopes | Source |\n|---|---|---|---|---|\n${actors.filter((a) => a.data?.kind && a.data.kind !== 'human').map((a) => `| ${cell(a.name)} | ${cell(a.data.kind)} | ${cell(a.data?.obtained_via || 'not mapped')} | ${cell((a.data?.scopes || []).join(', ') || 'not mapped')} |${cite(a)} |`).join('\n')}`
+      : '_COVERAGE GAP — no token or non-human actor was established._', '',
   ].join('\n')
   const cols = roles.slice(0, 24)
   const matrix = [
@@ -301,7 +413,12 @@ function renderRoles(db, roles, actors) {
       ? `| Ability | ${cols.map((r) => cell(roleName(r))).join(' | ')} | Wiring |\n|---|${cols.map(() => '---').join('|')}|---|\n${perms.slice(0, 400).map((p) => `| ${cell(p.name)} | ${cols.map((r) => enables.get(r.id)?.has(p.id) ? '✓' : '○').join(' | ')} |${cite(p)} |`).join('\n')}`
       : '_no grounded role→ability wiring derived_', '',
   ].join('\n')
-  return { structure, matrix }
+  const identity = [...actors, ...roles, ...perms]
+  const sourceFiles = [...new Set(identity.map((n) => n.data?.source).filter(Boolean))].sort().join('\n') + (identity.length ? '\n' : '')
+  const hints = identity.length
+    ? identity.map((n) => `${n.type}\t${n.name}\t${n.data?.source || 'source gap'}`).join('\n') + '\n'
+    : 'COVERAGE_GAP\tNo source-grounded actor, role, or permission ontology was established.\n'
+  return { structure, matrix, sourceFiles, hints }
 }
 
 // Architecture view — the deterministic technical clusters (directory/namespace groupings). These are FACTS about
@@ -317,11 +434,105 @@ function renderArchitecture(db, clusters, coverage, gate, blocked) {
     `## ${d}\n\n| Technical cluster | Rows | Method |\n|---|---|---|\n${cs.sort((a, b) => (a.name > b.name ? 1 : -1)).map((c) => `| ${c.name} | ${rowsFor(c)} | ${c.data.planning_method || 'module-cohesion'} |`).join('\n')}`)
   return `# Architecture — Technical Clusters (NOT business features)\n\n${banner}\n- Technical clusters: ${clusters.length}\n- Technical coverage (source files represented): ${coverage?.technical_coverage ?? '?'}%\n- Semantic coverage (mapped to features): ${coverage?.semantic_coverage ?? 0}%\n\n${sections.join('\n\n')}\n`
 }
-const renderIndex = (features, domains, blocked, clusters = []) => blocked
-  ? `# Feature Index\n\n> **No business features** — semantic planning was blocked (see \`phase1_completion_gate.md\`).\n> ${clusters.length} technical cluster(s) are listed in \`architecture.md\` (code structure, not capabilities).\n> Connect Claude and re-scan to derive features.\n`
-  : `# Feature Index\n\n${domains.map((d) =>
-  `## ${d.name}\n${features.filter((f) => f.data.domain === (d.id.replace(/^domain:/, ''))).map((f) => `- [${f.name}](../features/${f.data.slug}.md)`).join('\n')}`).join('\n\n')}\n`
+function renderIndex(features, domains, blocked, clusters = [], db) {
+  const endpointRows = db.prepare(`SELECT COUNT(*) n FROM nodes WHERE type IN ('ENDPOINT','ROUTE','GRAPHQL_OPERATION','JOB')`).get()?.n || 0
+  const required = [
+    ['Application architecture overview', '../README.md + per-feature Feature Identity/Purpose'],
+    ['Feature coverage matrix', 'feature_coverage_matrix.md'],
+    ['File-to-feature map', '../features/*.md — Files Reviewed'],
+    ['Entry-point-to-feature map', '../features/*.md — Entry Points'],
+    ['Authorization map', '../features/*.md — Authorization Map'],
+    ['Authentication/actor map', '../features/*.md — Authentication / Actor Context Map'],
+    ['API map', '../inventories/*rest_api* + feature REST tables'],
+    ['GraphQL map', '../inventories/*graphql* + feature GraphQL tables'],
+    ['Worker/background job map', '../inventories/*workers_jobs* + feature job tables'],
+    ['Serializer/entity/presenter map', '../inventories/*response_shaping* + Data Exposure maps'],
+    ['Search/export/download map', '../inventories/*search* and *downloads*'],
+    ['Token flow map', '../inventories/*tokens_actors* + role structure'],
+    ['Same-functionality cross-feature map', 'same_functionality_cross_feature_map.md'],
+    ['Shared infrastructure map', 'same_functionality_cross_feature_map.md'],
+    ['Unmapped files/directories', 'phase1_completion_gate.md + Architecture'],
+    ['Phase 2 review queue', 'phase2_review_queue.md'],
+    ['Source inventory coverage matrix', 'source_inventory_coverage_matrix.md'],
+    [`Endpoint/action ledger (${endpointRows} graph rows)`, '../features/*.md + ../ledgers/*.jsonl'],
+    ['Role / actor catalog + role ladder', '../roles/role-structure.md'],
+    ['Role → ability matrix', '../roles/role-ability-matrix.md'],
+    ['Token / non-human actor map', '../roles/role-structure.md — token actor table'],
+  ]
+  const featureList = blocked
+    ? `> **No business features** — semantic planning was blocked. ${clusters.length} technical cluster(s) are listed
+> in \`architecture.md\`; they are code structure, not capabilities.`
+    : domains.map((d) => `## ${d.name}\n${features.filter((f) => f.data.domain === d.id.replace(/^domain:/, ''))
+      .map((f) => `- [${f.name}](../features/${f.data.slug}.md)`).join('\n')}`).join('\n\n')
+  return `# Phase 1 Artifact Index
+
+## Required outputs (21/21 accounted)
+
+| # | Required output | Artifact / status |
+|---:|---|---|
+${required.map(([name, where], i) => `| ${i + 1} | ${name} | ${cell(where)} |`).join('\n')}
+
+## Feature queue (${features.length})
+
+${featureList}
+
+## Reading order for Phase 2
+
+1. \`phase1_completion_gate.md\`
+2. \`phase2_review_queue.md\`
+3. \`same_functionality_cross_feature_map.md\`
+4. \`../features/<slug>.md\` and \`../ledgers/<slug>.jsonl\`
+`
+}
 const renderCoverage = (features, coverage, blocked) => `# Coverage Matrix\n\n- Semantic coverage (mapped to features): ${coverage?.semantic_coverage ?? 0}%\n- Technical coverage (source represented): ${coverage?.technical_coverage ?? '?'}%\n- Features: ${features.length}${blocked ? ' (semantic planning BLOCKED — see architecture.md)' : ''}\n- Mapped rows: ${coverage?.feature_rows ?? '?'}\n- Shared infrastructure rows: ${coverage?.infra_rows ?? '?'}\n\n| Feature | Rows |\n|---|---|\n${features.map((f) => `| ${f.name} | ${f.data.row_count || 0} |`).join('\n') || '_none — no business features derived_'}\n`
 const renderGate = (gate, coverage, provenance) => `# Completion Gate\n\n- Status: **${gate?.status || 'UNKNOWN'}**\n- Executed planner: \`${provenance?.executed_planner || 'unknown'}\`${provenance?.lead_session_id ? ` · Lead session \`${provenance.lead_session_id}\`` : ''}\n- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%\n${provenance?.failure_reason ? `- Failure reason: ${provenance.failure_reason}\n` : ''}- Gaps: ${(gate?.gaps || []).length ? gate.gaps.join('; ') : 'none'}\n- Terminal reconciliation: ${JSON.stringify(coverage?.terminal || {})}\n`
-const renderReadme = (project, snapshot, c, features, { blocked, coverage, clusters = [], provenance } = {}) => `# ${project?.name || 'Codengram'} — code recon brain\n\nRecon only — structure & understanding, never vulnerability detection.\n${blocked ? `\n> ⚠️ **SEMANTIC PLANNING BLOCKED** (${provenance?.failure_reason || 'Claude Lead unavailable'}).\n> No business features were derived — only deterministic technical architecture. See \`consolidated/architecture.md\`.\n> Connect Claude (a logged-in Claude Agent SDK) and re-scan to map features, actors, roles and permissions.\n` : ''}\n- Snapshot: \`${snapshot?.id || ''}\`\n- Graph: ${c.nodes} nodes · ${c.edges} edges · ${c.claims} provenance claims\n- Features: ${features.length}${blocked ? ` · Technical clusters: ${clusters.length}` : ''}\n- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%\n\nOpen \`consolidated/00_INDEX.md\`${blocked ? ' / `consolidated/architecture.md`' : ''}, or load \`graph/nodes.jsonl\` + \`graph/edges.jsonl\` into any tool.\n`
+const renderReadme = (project, snapshot, c, features, { blocked, coverage, clusters = [], provenance } = {}) => `# ${project?.name || 'Codengram'} White-Box Security Assessment — Phase 1 Artifacts
+
+- Target: \`${project?.source_root || project?.id || 'unknown'}\`
+- Snapshot: \`${snapshot?.id || ''}\`
+- Recon skill: \`${provenance?.recon_skill?.id || 'phase1-feature-map'}\` · \`${provenance?.recon_skill?.sha256 || 'unavailable'}\`
+- Graph: ${c.nodes} nodes · ${c.edges} edges · ${c.claims} provenance claims
+- Features: ${features.length}${blocked ? ` · Technical clusters: ${clusters.length}` : ''}
+- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%
+
+This is **mapping, not vulnerability hunting**. No exploit work occurs in Phase 1.
+${blocked ? `
+> **SEMANTIC PLANNING BLOCKED** (${provenance?.failure_reason || 'Claude Lead unavailable'}).
+> No business features were derived. Deterministic source facts remain in \`inventories/\` and technical structure in
+> \`consolidated/architecture.md\`; neither is presented as product functionality or identity.
+` : ''}
+## Directory layout
+
+- \`inventories/\` — deterministic source facts and reconciliation manifest
+- \`roles/\` — Claude-derived, source-grounded actors, roles, permissions, and wiring
+- \`features/\` — one 13-section feature map per grounded capability
+- \`ledgers/\` — exhaustive machine-readable rows per feature
+- \`consolidated/\` — coverage matrices, cross-feature links, Phase 2 queue, and completion gate
+- \`graph/\` — portable nodes and edges
+
+## Method
+
+1. **Inventories:** read-only, stack-neutral extraction of routes, APIs, GraphQL, jobs, services, policies, response
+   shaping, data movement, identity clues, processes, and integrations.
+2. **Semantic feature mapping:** a Claude Lead follows the bundled recon-skill, delegates read-only reconnaissance,
+   derives the repository-specific feature and identity ontology, and cites source evidence. Codengram validates every
+   citation and reconciles every inventory row. Code never supplies product feature names or role vocabularies.
+3. **Consolidation:** the sealed graph is projected into the fixed Phase 1 artifact contract and checked before publish.
+
+## Depth-status meaning
+
+| Depth | Meaning | Phase 2 can rely? |
+|---|---|---|
+| Discovered | Surface found, implementation not connected | No |
+| Mapped | Assigned to a grounded feature | Partially |
+| Traced | Entry connected through relevant implementation | Yes, with cited gaps |
+| AuthZ Verified | Actor/role/permission wiring grounded per entry | Yes |
+| Deep Complete | All feature surfaces independently traced and reconciled | Yes |
+
+## Feature queue (${features.length})
+
+${features.length ? features.map((f) => `- \`${f.data.slug}\` — ${f.name}`).join('\n') : '_No semantic features were published._'}
+
+Start with \`consolidated/phase1_completion_gate.md\`, then \`consolidated/00_INDEX.md\`.
+`
 const renderAiContext = (project, snapshot, features, c, { blocked, coverage, clusters = [] } = {}) => `# AI_CONTEXT — ${project?.name || 'project'}\n\nYou are reading a **code reconnaissance brain** produced by Codengram (recon only; it never asserts vulnerabilities).\nEvery claim is grounded to a file:line in the frozen snapshot. Coverage gaps are labelled, not hidden.\n${blocked ? `\n**SEMANTIC PLANNING BLOCKED** — no Claude Lead derived meaning, so there are NO business features, actors, roles or permissions in this bundle. What IS here: deterministic inventories (\`inventories/\`), ${clusters.length} technical clusters (\`consolidated/architecture.md\`), and the raw graph. Do NOT treat a technical cluster as a business capability. Treat every absent semantic fact as "coverage gap — Claude was not available", never as "none exist".\n` : ''}\n- Snapshot: \`${snapshot?.id || ''}\` — ${c.nodes} nodes, ${c.edges} edges.\n- ${features.length} features across ${new Set(features.map((f) => f.data.domain)).size} domains.\n- Semantic coverage: ${coverage?.semantic_coverage ?? 0}% · Technical coverage: ${coverage?.technical_coverage ?? '?'}%.\n\nTo answer a question: start with \`consolidated/00_INDEX.md\`, read the relevant compact \`features/<slug>.md\`, then use \`ledgers/<slug>.jsonl\` for every mapped row and its source evidence. Follow relationships in \`graph/edges.jsonl\` (canonical direction from→to). The Markdown feature map is intentionally bounded for humans; the JSONL ledger is exhaustive. If a fact isn't present, say "coverage gap" — do not guess.\n`

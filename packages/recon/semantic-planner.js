@@ -93,24 +93,38 @@ export function validateLeadPlan(plan, inventories) {
     const featureSlug = slug(raw.slug || raw.name), domain = slug(raw.domain || 'core')
     if (!featureSlug) continue
     definitions.push({ slug: featureSlug, domain, name: String(raw.name || titleize(featureSlug)).slice(0, 100),
-      purpose: '', rows: [],
+      purpose: String(raw.purpose || '').trim().slice(0, 1200), rows: [],
+      evidence: Array.isArray(raw.evidence) ? raw.evidence : [],
+      actors: Array.isArray(raw.actors) ? raw.actors : [],
+      permissions: Array.isArray(raw.permissions) ? raw.permissions : [],
       explicit: new Set(Array.isArray(raw.inventory_keys) ? raw.inventory_keys : []),
       paths: (raw.include_paths || []).map((p) => String(p).toLowerCase()).filter(Boolean),
       terms: (raw.include_terms || []).map((p) => String(p).toLowerCase()).filter((p) => p.length > 2),
-      confidence: 'medium', planning_method: 'agent-lead' })
+      symbols: (raw.include_symbols || []).map((p) => String(p).toLowerCase()).filter((p) => p.length > 2),
+      entries: (raw.include_entries || []).map((p) => String(p).toLowerCase()).filter((p) => p.length > 2),
+      excludePaths: (raw.exclude_paths || []).map((p) => String(p).toLowerCase()).filter(Boolean),
+      excludeTerms: (raw.exclude_terms || []).map((p) => String(p).toLowerCase()).filter((p) => p.length > 2),
+      confidence: ['high', 'medium', 'low'].includes(raw.confidence) ? raw.confidence : 'medium',
+      planning_method: 'agent-lead' })
   }
   for (const item of sourceRows) {
-    const file = String(item.row.file || '').toLowerCase(), text = `${file} ${item.row.entry || ''} ${item.row.detail || ''}`.toLowerCase()
+    const file = String(item.row.file || '').toLowerCase()
+    const entry = String(item.row.entry || '').toLowerCase()
+    const text = `${file} ${entry} ${item.row.detail || ''}`.toLowerCase()
     let winner = null
     for (const def of definitions) {
+      if (def.excludePaths.some((p) => file.includes(p)) || def.excludeTerms.some((p) => text.includes(p))) continue
       let score = def.explicit.has(item.key) ? 10_000 : 0
       for (const p of def.paths) if (file.includes(p)) score += 100 + p.length
+      for (const symbol of def.symbols) if (text.includes(symbol)) score += 80 + symbol.length
+      for (const selectedEntry of def.entries) if (entry.includes(selectedEntry)) score += 120 + selectedEntry.length
       for (const term of def.terms) if (text.includes(term)) score += 10 + term.length
       if (score > 0 && (!winner || score > winner.score || (score === winner.score && def.slug < winner.def.slug))) winner = { def, score }
     }
     if (winner) { winner.def.rows.push({ kind: item.kind, row: item.row }); claimed.add(item.key) }
   }
-  const leadFeatures = definitions.filter((d) => d.rows.length).map(({ explicit, paths, terms, ...d }) => d)
+  const leadFeatures = definitions.filter((d) => d.rows.length)
+    .map(({ explicit, paths, terms, symbols, entries, excludePaths, excludeTerms, ...d }) => d)
   if (!leadFeatures.length) return null
   // Coalesce duplicate Lead definitions (same domain/slug) so one capability is never rendered twice.
   const merged = new Map()

@@ -21,14 +21,15 @@ export function makeEvidenceVerifier({ readSource, fileExists = null }) {
     const text = get(rel)
     const lines = text ? text.split(/\r?\n/) : []
     if (ev.line != null && lines.length && ev.line > lines.length) return { ok: false, reason: `cited line ${ev.line} > ${lines.length} lines in ${rel}` }
-    if (ev.symbol) {
+    if (ev.symbol && text) {
       const sym = String(ev.symbol)
-      if (text && !text.includes(sym)) return { ok: false, reason: `symbol '${sym}' not found in ${rel}` }
-      // when both line and symbol are given, the symbol should appear within a small window of the cited line
-      if (ev.line != null && lines.length) {
-        const lo = Math.max(0, ev.line - 6), hi = Math.min(lines.length, ev.line + 5)
-        if (!lines.slice(lo, hi).some((l) => l.includes(sym))) return { ok: false, reason: `symbol '${sym}' not near cited line ${ev.line} in ${rel}` }
-      }
+      // A Lead naturally cites QUALIFIED symbols — Role::Support, obj->method, Module.Class, name(), #[Attr]. Require a
+      // significant identifier TOKEN of the symbol to appear in the file (not the whole qualified string verbatim). This
+      // still grounds the claim against real source while tolerating how models write references. Line numbers drift, so
+      // presence-in-file is the anchor, not presence-on-the-exact-line.
+      const tokens = sym.split(/[^A-Za-z0-9_]+/).filter((t) => t.length >= 3)
+      const needles = tokens.length ? tokens : [sym]
+      if (!needles.some((t) => text.includes(t))) return { ok: false, reason: `symbol '${sym}' not found in ${rel}` }
     }
     if (requireEstablishing && !canEstablishIdentity(rel)) return { ok: false, reason: `identity evidence from non-authoritative source (test/fixture/asset/doc): ${rel}` }
     return { ok: true, reason: null }
@@ -58,7 +59,20 @@ export function validateOntology(ontology, verifier) {
   const features = keep(ontology?.features, 'feature')
   const actors = keep(ontology?.actors, 'actor', true)
   const roles = keep(ontology?.roles, 'role', true)
-  const permissions = keep(ontology?.permissions, 'permission', true)
+  const actorNames = new Set(actors.map((e) => e.name).filter(Boolean))
+  const roleNames = new Set(roles.map((e) => e.name).filter(Boolean))
+  const permissions = keep(ontology?.permissions, 'permission', true).filter((permission) => {
+    const grantedRoles = (permission.enabled_by_roles || []).filter((name) => roleNames.has(name))
+    const grantedActors = (permission.granted_to_actors || []).filter((name) => actorNames.has(name))
+    if (!grantedRoles.length && !grantedActors.length) {
+      rejected.push({ kind: 'permission', name: permission.name || '(unnamed)',
+        reason: 'permission has no grounded actor or role grantee' })
+      return false
+    }
+    permission.enabled_by_roles = grantedRoles
+    permission.granted_to_actors = grantedActors
+    return true
+  })
   const names = new Set([...features, ...actors, ...roles, ...permissions].map((e) => e.slug || e.name).filter(Boolean))
   const relationships = (Array.isArray(ontology?.relationships) ? ontology.relationships : []).filter((r) => {
     const ok = names.has(r?.from) && names.has(r?.to)

@@ -34,7 +34,11 @@ test('renderer projects phase1-maps from the graph and passes the Markdown↔gra
 
   assert.ok(r.crosscheck.ok, `cross-check must match (graph=${r.crosscheck.graph}, md=${r.crosscheck.markdown})`)
   for (const f of ['README.md', 'AI_CONTEXT.md', 'manifest.json', 'graph/nodes.jsonl', 'graph/edges.jsonl',
-    'consolidated/00_INDEX.md', 'consolidated/phase1_completion_gate.md'])
+    'inventories/00_MANIFEST.md', 'roles/role-structure.md', 'roles/role-ability-matrix.md',
+    'roles/role_authz_source_files.txt', 'roles/role_structure_hints.txt',
+    'consolidated/00_INDEX.md', 'consolidated/feature_coverage_matrix.md',
+    'consolidated/source_inventory_coverage_matrix.md', 'consolidated/same_functionality_cross_feature_map.md',
+    'consolidated/phase2_review_queue.md', 'consolidated/phase1_completion_gate.md'])
     assert.ok(fs.existsSync(path.join(out, 'phase1-maps', f)), `${f} written`)
 
   const userMd = fs.readFileSync(path.join(out, 'phase1-maps', 'features', 'user.md'), 'utf8')
@@ -60,5 +64,8 @@ test('renderer projects phase1-maps from the graph and passes the Markdown↔gra
   assert.ok(nodes.some((n) => n.type === 'FEATURE'))
   const manifest = JSON.parse(fs.readFileSync(path.join(out, 'phase1-maps', 'manifest.json'), 'utf8'))
   assert.ok(manifest.files.includes('manifest.json') && manifest.files.includes('consolidated/phase1_crosscheck_verification.md'))
+  const index = fs.readFileSync(path.join(out, 'phase1-maps', 'consolidated', '00_INDEX.md'), 'utf8')
+  assert.match(index, /Required outputs \(21\/21 accounted\)/)
+  assert.match(index, /\| 21 \| Token \/ non-human actor map/)
   fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(out, { recursive: true, force: true })
 })

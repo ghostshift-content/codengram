@@ -11,10 +11,10 @@ import { profileRepo } from '../profiler/index.js'
 import { extractInventories, inventoryMeta, INVENTORY_EXTRACTOR_VERSION } from '../inventories/index.js'
 import { INVENTORY_KEYS } from '../plugins/index.js'
 import { openGraph, upsertNode, upsertEdge, addClaim, addReconItem, reconCounts, reconTotal, mergeStaging, counts, nodesByType } from '../graph/index.js'
-import { ID, slug, safeRelPath, pipelineVersions, PROMPT_VERSION, PLANNER_VERSION, canEstablishIdentity } from '../schemas/index.js'
+import { ID, slug, safeRelPath, pipelineVersions, PROMPT_VERSION, PLANNER_VERSION } from '../schemas/index.js'
 import { createSnapshot, getProject, sourceRootDir, snapshotDir, listSnapshots } from '../ingestion/index.js'
 import { deterministicSemanticPlan, validateLeadPlan, semanticFeatureForRow } from './semantic-planner.js'
-import { planRecon, isAvailable as claudeAvailable } from '../claude-runtime/index.js'
+import { planRecon, isAvailable as claudeAvailable, reconSkillInfo } from '../claude-runtime/index.js'
 import { makeEvidenceVerifier, validateOntology } from './evidence-validator.js'
 
 // Which inventories describe user-facing capabilities (→ features) vs shared infrastructure.
@@ -60,43 +60,6 @@ export function summarizeClusters(clusters, { maxClusters = 400, samplesPerClust
     const samples = c.rows.slice(0, samplesPerCluster).map(({ kind, row }) => `${kind}:${String(row.entry || row.file).slice(0, 60)}`)
     return { slug: c.slug, domain: c.domain, name: c.name, row_count: c.rows.length, kinds, paths: [...dirs], samples }
   })
-}
-
-// Roles & permissions are whatever the AUTHORIZATION CODE actually names — derived generically from the captured auth
-// line (annotations/attributes, quoted role names, ROLE_/PERMISSION_ constants, ability symbols). NO fixed vocabulary;
-// the SAME rule runs for every language. The AI Lead refines these when connected.
-function accessTokensFrom(text) {
-  const roles = new Set(), perms = new Set()
-  const norm = (s) => String(s || '').trim().replace(/^ROLE[_-]/i, '').slice(0, 40)
-  const keep = (v, set) => { const n = norm(v); if (n && slug(n)) set.add(n) }
-  // access-control annotations / attributes whose NAME is the level itself: #[AdminRequired], #[PublicPage]. Skip
-  // wrapper annotations that take the role as an argument (handled below) so we record the role, not the wrapper.
-  const WRAPPER = /^(RolesAllowed|PreAuthorize|PostAuthorize|Secured|Authorize|IsGranted|RequirePermission|PermitAll|DenyAll)$/i
-  for (const m of text.matchAll(/[@#]\[?\s*([A-Za-z][A-Za-z0-9]{2,40})/g))
-    if (!WRAPPER.test(m[1]) && /require|admin|role|secur|auth|public|anonym|grant|permission|guard|access|login|restrict|scope|owner|member|moderat|editor|viewer|permit|deny/i.test(m[1])) keep(m[1], roles)
-  // quoted role / permission names inside authorization calls or wrapper annotations
-  for (const m of text.matchAll(/\b(?:hasRole|hasAnyRole|hasAuthority|isGranted|requireRole|RolesAllowed|PreAuthorize|PostAuthorize|Secured|Authorize|RequirePermission|role|scope|ability|authorize|allowed|grant|permission|require|can)\b[^'"\n]{0,20}(['"])([A-Za-z][\w.:/ -]{1,40})\1/gi)) keep(m[2], roles)
-  // ROLE_ / PERMISSION_ / SCOPE_ constants
-  for (const m of text.matchAll(/\b(?:ROLE|PERMISSION|SCOPE|GRANT|ABILITY|CAP)_([A-Za-z][A-Za-z0-9_]{1,40})\b/g)) keep(m[1], roles)
-  // ability symbols (e.g. Ruby can? :manage, authorize! :read)
-  for (const m of text.matchAll(/(?:can\??|cannot|authorize!?|allowed\??|ability)\s*[!(]?\s*:([a-z][a-z0-9_]{2,40})/gi)) keep(m[1], perms)
-  return { roles: [...roles].slice(0, 15), perms: [...perms].slice(0, 15) }
-}
-
-// STRICT RULE: only Claude derives repository MEANING. A ROLE is meaning — a deterministic string scraper cannot tell
-// "Owner" (a role) from "Authorization" / "Permission" / "Devise/Orm/ActiveRecord" / an error-message fragment. So this
-// extracts only ABILITIES (grounded `can? :symbol` facts), never ROLES. Roles come exclusively from the evidence-
-// validated Lead ontology (buildOntology). Ability→role wiring is likewise the Lead's job.
-function addIdentityContext(g, snapshot_id, featureId, authNodeId, row) {
-  const { perms } = accessTokensFrom(String(row.entry || ''))
-  for (const permission of perms) {
-    const permissionId = `permission:${slug(permission)}`
-    upsertNode(g, { type: 'PERMISSION', id: permissionId, name: permission.replace(/[_-]+/g, ' '), snapshot_id,
-      data: { source: row.file, line: row.line } })
-    upsertEdge(g, { type: 'AUTHORIZED_BY', from: featureId, to: permissionId, snapshot_id })
-    addClaim(g, { id: `c:${permissionId}:observed:${row.file}:${row.line}`, node_id: permissionId, field: 'observed',
-      snapshot_id, file: row.file, line_start: row.line, confidence: 'medium', method: 'grep' })
-  }
 }
 
 // Build a typed node (+ FILE + provenance claim) for one inventory row; return { nodeId, edge } for feature wiring.
@@ -205,10 +168,8 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
       const nid = nodeForRow(g, sid, featId, kind, row)
       if (nid && ['routes_endpoints', 'rest_api', 'graphql', 'workers_jobs'].includes(kind)) interfaceNodes.push({ nid, kind, row, primary: featId })
       if (nid && /^service:|^authcheck:/.test(nid)) { if (!serviceUsers.has(nid)) serviceUsers.set(nid, new Set()); serviceUsers.get(nid).add(featId) }
-      // Identity (roles/permissions) may ONLY be established from authoritative production/config evidence — never
-      // from specs, fixtures, assets, docs, translations or generated code. This kills the "roles scraped from a
-      // permission_check_spec.rb string" class of bug at the source, in every language.
-      if ((kind === 'tokens_actors' || (kind === 'services_finders_policies' && row.detail === 'policy')) && canEstablishIdentity(row.file)) addIdentityContext(g, sid, featId, nid, row)
+      // Raw auth/policy facts stay source-cited. Only the evidence-validated Claude ontology may turn those facts into
+      // semantic ACTOR, ROLE, or PERMISSION nodes; deterministic code never interprets identity names.
       // #6: record THIS row's terminal reconciliation status in the ledger (per-item, not summary math).
       addReconItem(g, { id: ID.scoped('recon', kind, row.file, row.line, row.entry), kind, file: row.file, line: row.line, entry: row.entry, status: 'MAPPED_TO_FEATURE', feature_id: featId, snapshot_id: sid })
     }
@@ -260,7 +221,11 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
 // (AUTHORIZED_BY), and feature actor reach. This is the SEMANTIC identity layer — meaning derived by Claude, grounded
 // to source — distinct from the deterministic authoritative-evidence role facts. Only runs when the Lead succeeded.
 function buildOntology(g, sid, ontology, features, onProgress) {
-  const featBySlug = new Map(features.map((f) => [f.slug, ID.feature(f.domain, f.slug)]))
+  const featByKey = new Map(features.map((f) => [`${f.domain}/${f.slug}`, ID.feature(f.domain, f.slug)]))
+  const uniqueSlug = new Map()
+  for (const f of features) uniqueSlug.set(f.slug, uniqueSlug.has(f.slug) ? null : ID.feature(f.domain, f.slug))
+  const featureId = (f) => featByKey.get(`${slug(f.domain || 'core')}/${slug(f.slug || f.name)}`)
+    || uniqueSlug.get(slug(f.slug || f.name)) || null
   const ev0 = (e) => (Array.isArray(e?.evidence) && e.evidence[0]) || null
   const claimFrom = (nodeId, field, ev) => { if (ev?.file) addClaim(g, { id: `c:${nodeId}:${field}:${ev.file}:${ev.line || 1}`, node_id: nodeId, field, snapshot_id: sid, file: ev.file, line_start: ev.line || 1, confidence: 'high', method: 'llm-map' }) }
   const roleId = (name) => ID.role(slug(name)); const permId = (name) => `permission:${slug(name)}`; const actorId = (name) => ID.scoped('actor', slug(name))
@@ -269,16 +234,31 @@ function buildOntology(g, sid, ontology, features, onProgress) {
   let roles = 0, perms = 0, actors = 0
   // PASS 1 — all identity nodes first (so PASS-2 edges never dangle).
   for (const a of ontology.actors || []) { if (!slug(a.name)) continue; const id = actorId(a.name); if (made.has(id)) continue
-    upsertNode(g, { type: 'ACTOR', id, name: a.name, snapshot_id: sid, data: { obtained_via: a.obtained_via || null, hierarchical: !!a.hierarchical, source: ev0(a)?.file || null } }); claimFrom(id, 'actor', ev0(a)); made.add(id); actors++ }
+    upsertNode(g, { type: 'ACTOR', id, name: a.name, snapshot_id: sid,
+      data: { kind: a.kind || null, obtained_via: a.obtained_via || null, scopes: a.scopes || [],
+        hierarchical: !!a.hierarchical, source: ev0(a)?.file || null } })
+    claimFrom(id, 'actor', ev0(a)); made.add(id); actors++ }
   for (const r of ontology.roles || []) { if (!slug(r.name)) continue; const id = roleId(r.name); if (made.has(id)) continue
-    upsertNode(g, { type: 'ROLE', id, name: titleize(String(r.name).replace(/[_-]+/g, ' ')), snapshot_id: sid, data: { hierarchical: !!r.hierarchical, source: ev0(r)?.file || null, lead_derived: true } }); claimFrom(id, 'role', ev0(r)); made.add(id); roles++ }
+    upsertNode(g, { type: 'ROLE', id, name: titleize(String(r.name).replace(/[_-]+/g, ' ')), snapshot_id: sid,
+      data: { description: r.description || null, scope: r.scope || null, obtained_via: r.obtained_via || null,
+        hierarchical: !!r.hierarchical, source: ev0(r)?.file || null, lead_derived: true } })
+    claimFrom(id, 'role', ev0(r)); made.add(id); roles++ }
   for (const p of ontology.permissions || []) { if (!slug(p.name)) continue; const id = permId(p.name); if (made.has(id)) continue
-    upsertNode(g, { type: 'PERMISSION', id, name: String(p.name).replace(/[_-]+/g, ' '), snapshot_id: sid, data: { source: ev0(p)?.file || null, lead_derived: true } }); claimFrom(id, 'permission', ev0(p)); made.add(id); perms++ }
+    upsertNode(g, { type: 'PERMISSION', id, name: String(p.name).replace(/[_-]+/g, ' '), snapshot_id: sid,
+      data: { description: p.description || null, resource: p.resource || null, operation: p.operation || null,
+        source: ev0(p)?.file || null, lead_derived: true } })
+    claimFrom(id, 'permission', ev0(p)); made.add(id); perms++ }
   // PASS 2 — wiring: role→permission, permission→role, feature→actor reach.
   for (const r of ontology.roles || []) for (const p of r.enables || []) link('AUTHORIZED_BY', roleId(r.name), permId(p), { relationship: 'role-enables-permission' })
   for (const p of ontology.permissions || []) for (const rn of p.enabled_by_roles || []) link('REQUIRES_ROLE', permId(p.name), roleId(rn), { relationship: 'permission-requires-role' })
-  for (const f of ontology.features || []) { const fid = featBySlug.get(f.slug); if (!fid) continue
+  for (const p of ontology.permissions || []) for (const an of p.granted_to_actors || []) link('AUTHORIZED_BY', actorId(an), permId(p.name), { relationship: 'actor-granted-permission' })
+  for (const f of ontology.features || []) { const fid = featureId(f); if (!fid) continue
     for (const an of f.actors || []) if (made.has(actorId(an))) upsertEdge(g, { type: 'AUTHENTICATED_BY', from: fid, to: actorId(an), snapshot_id: sid, data: { relationship: 'feature-reachable-by-actor' } }) }
+  for (const f of ontology.features || []) { const fid = featureId(f); if (!fid) continue
+    for (const pn of f.permissions || []) if (made.has(permId(pn))) upsertEdge(g, {
+      type: 'AUTHORIZED_BY', from: fid, to: permId(pn), snapshot_id: sid,
+      data: { relationship: 'feature-governed-by-permission' },
+    }) }
   if (roles || perms || actors) onProgress({ kind: 'ontology_built', roles, permissions: perms, actors, label: `Built Lead ontology: ${actors} actors · ${roles} roles · ${perms} permissions (source-grounded)` })
 }
 
@@ -317,8 +297,10 @@ function buildArchitecture(g, { project, sid, clusters, onProgress }) {
   }
 }
 
-// A one-line structure-derived purpose (offline). AI enrichment can overwrite FEATURE.data.purpose later.
+// Semantic purpose comes only from the Claude Lead. The structural sentence is retained solely as an explicit
+// coverage-gap fallback for direct low-level graph tests; scanSnapshot never publishes it as semantic truth.
 function featurePurpose(f) {
+  if (String(f.purpose || '').trim()) return String(f.purpose).trim()
   const byKind = {}; for (const { kind } of f.rows) byKind[kind] = (byKind[kind] || 0) + 1
   const parts = Object.entries(byKind).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`)
   return `The ${f.name} capability — ${parts.join(', ')}. (structure-derived; unverified)`
@@ -411,8 +393,11 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   // The reuse/staleness fingerprint spans ALL pipeline component versions (extractor + planner + prompt + identity +
   // renderer + semantic-validation) + the inventories. Any version bump invalidates a stale plan and forces a re-plan.
   const versions = pipelineVersions()
+  let skillInfo = null
+  try { skillInfo = reconSkillInfo() } catch {}
   const inventoryFingerprint = crypto.createHash('sha256').update(`${INVENTORY_EXTRACTOR_VERSION}\n${JSON.stringify(inventories)}`).digest('hex')
-  const planFingerprint = crypto.createHash('sha256').update(`${JSON.stringify(versions)}\n${inventoryFingerprint}`).digest('hex')
+  const planFingerprint = crypto.createHash('sha256')
+    .update(`${JSON.stringify(versions)}\n${skillInfo?.sha256 || 'recon-skill-missing'}\n${inventoryFingerprint}`).digest('hex')
   onProgress({ kind: 'inventories', label: `Extracted ${invTotal} inventory items across 11 lists`, counts: invCounts, total: invTotal })
   onPhase({ phase: 'planning', label: 'Lead deriving repository-specific semantics' })
   const previousPublication = latestPublished(dataRoot, projectId)?.publication || null
@@ -441,17 +426,29 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
       resume: existingPublication?.lead_session_id || previousPublication?.lead_session_id || null, onEvent: onProgress })
     lead = r.lead; model = r.model; failureReason = r.failureReason
     if (lead?.plan) {
-      const validated = validateLeadPlan(lead.plan, inventories)   // { features: Lead-confirmed, archClusters: rows the Lead didn't map }
-      if (validated && validated.features.length) {
-        featurePlan = validated.features; archClusters = validated.archClusters || []; executedPlanner = 'agent-lead'; semantic = true
-        // S4: REJECT any ontology entity whose cited evidence does not exist in the frozen snapshot (anti-hallucination),
-        // and require roles/permissions/actors to cite AUTHORITATIVE production evidence — not specs/fixtures/strings.
-        const vres = validateOntology(lead.plan, makeEvidenceVerifier({ readSource }))
-        ontology = vres.ontology
-        validation = { ok: true, features: validated.length, ...vres.accepted, rejected: vres.rejected.length, rejections: vres.rejected.slice(0, 40) }
+      // One acceptance path: first ground the entire Claude ontology against the frozen snapshot, then reconcile
+      // inventory rows using ONLY the surviving feature definitions. A feature rejected by evidence validation can
+      // never remain in the graph merely because one of its selector terms happened to match.
+      const vres = validateOntology(lead.plan, makeEvidenceVerifier({ readSource }))
+      const validated = validateLeadPlan(vres.ontology, inventories)
+      if (validated?.features?.length) {
+        featurePlan = validated.features
+        archClusters = validated.archClusters || []
+        ontology = { ...vres.ontology, features: validated.features.map((f) => {
+          const original = vres.ontology.features.find((x) => slug(x.slug || x.name) === f.slug)
+          return original ? { ...original, slug: f.slug, domain: f.domain, name: f.name, purpose: f.purpose } : f
+        }) }
+        executedPlanner = 'agent-lead'
+        semantic = true
+        validation = { ok: true, features: validated.features.length, ...vres.accepted,
+          rejected: vres.rejected.length, rejections: vres.rejected.slice(0, 40) }
         onProgress({ kind: 'ontology_validated', accepted: vres.accepted, rejected: vres.rejected.length,
           label: `Ontology validated — ${vres.accepted.roles} roles · ${vres.accepted.permissions} permissions · ${vres.accepted.actors} actors grounded; ${vres.rejected.length} ungrounded entities rejected` })
-      } else { failureReason = failureReason || 'Lead plan failed ontology validation (no grounded features)'; validation = { ok: false, reason: failureReason } }
+      } else {
+        failureReason = 'Lead plan failed ontology validation or no grounded feature selected any inventory evidence'
+        validation = { ok: false, reason: failureReason, ...vres.accepted,
+          rejected: vres.rejected.length, rejections: vres.rejected.slice(0, 40) }
+      }
     }
   } else if (!featurePlan && agentic) {
     failureReason = 'Claude Agent SDK not available (not installed or not logged in)'
@@ -463,6 +460,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   const plannerName = semantic ? (executedPlanner === 'sealed-plan-reuse' ? 'sealed-plan-reuse' : 'claude-agent-sdk') : 'blocked'
   const planProvenance = { requested_planner: requestedPlanner, executed_planner: executedPlanner, semantic,
     lead_session_id: lead?.sessionId || null, model, failure_reason: failureReason,
+    recon_skill: lead?.reconSkill || skillInfo,
     fallback_reason: semantic ? null : 'semantic planning blocked — published technical architecture only (no business features)',
     validation_result: validation, prompt_version: PROMPT_VERSION, planner_version: PLANNER_VERSION, versions }
   onProgress({ kind: 'semantic_plan', count: semantic ? featurePlan.length : 0, technical_clusters: semantic ? 0 : featurePlan.length,

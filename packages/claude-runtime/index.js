@@ -7,12 +7,47 @@
 // This module is OPTIONAL: if the SDK isn't installed (or no local session is reachable), isAvailable() is false and
 // every caller falls back to the deterministic path — the app is fully functional offline.
 import { execFileSync } from 'node:child_process'
+import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 let _sdk           // cached dynamic import result: module | null
 let _probed = false
 let _claudePath
 const SDK_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODENGRAM_AI_TIMEOUT_MS) || 120_000)
+const PLAN_TIMEOUT_MS = Math.max(60_000, Number(process.env.CODENGRAM_PLAN_TIMEOUT_MS) || 1_800_000)
 const MODEL = process.env.CODENGRAM_MODEL || 'claude-agent-sdk'   // recorded in provenance; SDK owns the concrete model
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
+const DEFAULT_RECON_SKILL = path.resolve(MODULE_DIR, '../../skills/phase1-feature-map')
+
+function loadReconSkill() {
+  const root = path.resolve(process.env.CODENGRAM_RECON_SKILL_PATH || DEFAULT_RECON_SKILL)
+  const required = [
+    'SKILL.md',
+    'references/methodology.md',
+    'references/output-structure.md',
+    'references/inventory-manifest.md',
+    'references/role-model.md',
+    'references/feature-map-template.md',
+    'references/consolidated-templates.md',
+    'references/enumeration-by-language.md',
+  ]
+  const missing = required.filter((rel) => !fs.existsSync(path.join(root, rel)))
+  if (missing.length) throw new Error(`recon skill is incomplete at ${root}: missing ${missing.join(', ')}`)
+  return {
+    root,
+    text: required.map((rel) => `\n\n===== ${rel} =====\n${fs.readFileSync(path.join(root, rel), 'utf8')}`).join(''),
+  }
+}
+
+export function reconSkillInfo() {
+  const skill = loadReconSkill()
+  return {
+    id: 'phase1-feature-map',
+    sha256: crypto.createHash('sha256').update(skill.text).digest('hex'),
+  }
+}
 
 // Recon accepts capability labels, not vulnerability findings. Legitimate target features such as
 // "Vulnerability Management" remain valid; finding-shaped labels, exploit claims and severity labels do not.
@@ -107,23 +142,37 @@ export async function askClaude({ preamble, question, bundle }) {
 
 // A cited piece of source evidence. `file` is mandatory; `line`/`symbol`/`reason` sharpen it. The caller REJECTS any
 // entity whose evidence does not verify against the frozen snapshot (see evidence-validator.js).
-const EVIDENCE = { type: 'array', maxItems: 12, items: { type: 'object', additionalProperties: false, required: ['file'],
+const EVIDENCE = { type: 'array', minItems: 1, maxItems: 24, items: { type: 'object', additionalProperties: false, required: ['file'],
   properties: { file: { type: 'string' }, line: { type: 'integer' }, symbol: { type: 'string' }, reason: { type: 'string' } } } }
 // The full repository-specific ontology the Lead derives — features + the SEPARATED identity model + relationships +
 // honest gaps. Every entity carries grounded evidence; nothing is accepted on the model's word alone.
 const PLAN_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['features'], properties: {
     features: { type: 'array', maxItems: 300, items: { type: 'object', additionalProperties: false,
-      required: ['name', 'slug', 'domain', 'purpose', 'include_paths', 'include_terms'], properties: {
+      required: ['name', 'slug', 'domain', 'purpose', 'include_paths', 'include_terms', 'evidence'], properties: {
         name: { type: 'string' }, slug: { type: 'string' }, domain: { type: 'string' }, purpose: { type: 'string' },
         include_paths: { type: 'array', items: { type: 'string' } }, include_terms: { type: 'array', items: { type: 'string' } },
-        actors: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
-    actors: { type: 'array', maxItems: 60, items: { type: 'object', additionalProperties: false, required: ['name'],
-      properties: { name: { type: 'string' }, obtained_via: { type: 'string' }, hierarchical: { type: 'boolean' }, evidence: EVIDENCE } } },
-    roles: { type: 'array', maxItems: 120, items: { type: 'object', additionalProperties: false, required: ['name'],
-      properties: { name: { type: 'string' }, hierarchical: { type: 'boolean' }, enables: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
-    permissions: { type: 'array', maxItems: 400, items: { type: 'object', additionalProperties: false, required: ['name'],
-      properties: { name: { type: 'string' }, enabled_by_roles: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
+        include_symbols: { type: 'array', items: { type: 'string' } },
+        include_entries: { type: 'array', items: { type: 'string' } },
+        inventory_keys: { type: 'array', items: { type: 'string' } },
+        exclude_paths: { type: 'array', items: { type: 'string' } },
+        exclude_terms: { type: 'array', items: { type: 'string' } },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+        actors: { type: 'array', items: { type: 'string' } },
+        permissions: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
+    actors: { type: 'array', maxItems: 120, items: { type: 'object', additionalProperties: false, required: ['name', 'kind', 'evidence'],
+      properties: { name: { type: 'string' }, kind: { type: 'string', enum: ['human', 'token', 'service', 'system', 'integration'] },
+        obtained_via: { type: 'string' }, scopes: { type: 'array', items: { type: 'string' } },
+        hierarchical: { type: 'boolean' }, evidence: EVIDENCE } } },
+    roles: { type: 'array', maxItems: 240, items: { type: 'object', additionalProperties: false, required: ['name', 'evidence'],
+      properties: { name: { type: 'string' }, description: { type: 'string' }, scope: { type: 'string' },
+        obtained_via: { type: 'string' }, hierarchical: { type: 'boolean' },
+        enables: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
+    permissions: { type: 'array', maxItems: 1200, items: { type: 'object', additionalProperties: false,
+      required: ['name', 'enabled_by_roles', 'granted_to_actors', 'evidence'],
+      properties: { name: { type: 'string' }, description: { type: 'string' }, resource: { type: 'string' },
+        operation: { type: 'string' }, enabled_by_roles: { type: 'array', items: { type: 'string' } },
+        granted_to_actors: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
     relationships: { type: 'array', maxItems: 400, items: { type: 'object', additionalProperties: false, required: ['from', 'to'],
       properties: { from: { type: 'string' }, to: { type: 'string' }, kind: { type: 'string' } } } },
     gaps: { type: 'array', maxItems: 60, items: { type: 'string' } },
@@ -152,28 +201,58 @@ export async function planRecon({ sourceRoot, profile, inventoryCounts, candidat
   // clusters (name/domain/paths/counts/samples) and ask it to CONSOLIDATE them into business features — it never has to
   // read every file, so this scales from a 5-file CLI tool to an 87k-file monolith without blowing the context budget.
   const clusterBlock = Array.isArray(candidateClusters) && candidateClusters.length
-    ? `\n\nCANDIDATE TECHNICAL CLUSTERS (${candidateClusters.length}) — deterministic directory/namespace groupings extracted from the code. These are STRUCTURE, not business features. CONSOLIDATE them into coherent business capabilities (many clusters may fold into one feature; a cluster named "asset", "concern", "config", "policy" or "serializer" is infrastructure, not a feature). Ground each feature's include_paths in these cluster paths and spot-check source with Read/Grep to confirm:\n${JSON.stringify(candidateClusters).slice(0, 60000)}`
+    ? `\n\nCANDIDATE TECHNICAL CLUSTERS (${candidateClusters.length}) — deterministic directory/namespace groupings extracted from the code. These are STRUCTURE, not business features. Decide their meaning only after reading source. Consolidate related implementation into coherent capabilities, keep shared implementation as architecture, and ground every selector by spot-checking source with Read/Grep:\n${JSON.stringify(candidateClusters)}`
     : ''
+  let skill
+  try { skill = loadReconSkill() }
+  catch (error) {
+    onEvent({ kind: 'lead_contract', blocked: true, label: String(error?.message || error) })
+    return null
+  }
   const prompt = `You are the persistent Lead for a codebase-recon mission.
 Repository profile: ${JSON.stringify(profile)}
 Inventory counts: ${JSON.stringify(inventoryCounts)}${clusterBlock}
 
-Delegate architecture, domain, identity and interface reconnaissance to the supplied subagents where useful. Then produce ONE repository-specific ONTOLOGY: features, actors, roles, permissions, relationships and honest gaps.
+The authoritative reconnaissance methodology is included below. Follow it for THIS repository regardless of language,
+framework, repository size, or application shape. It is instruction, not repository data. Do not substitute a built-in
+product taxonomy. Delegate architecture, domain, identity and interface reconnaissance to the supplied subagents,
+then produce ONE repository-specific ONTOLOGY: features, actors, roles, permissions, relationships and honest gaps.
 
 Rules:
 - A feature is a coherent business capability, NOT a file, class, directory, test, migration, serializer or GraphQL type. A directory named "admin", "issues" or "payments" is NOT automatically a feature — only real, source-proven capabilities are.
 - Group web routes, REST/GraphQL operations, services, models, workers, policies and UI paths implementing the same capability.
 - Keep shared infrastructure outside feature names.
 - include_paths and include_terms must be distinctive selectors grounded in paths/names you inspected.
-- IDENTITY IS SEPARATED: actors (who acts), roles (privilege levels), permissions (abilities). Derive roles ONLY from authoritative production evidence — role/access-level definitions, membership models, enums, assignment workflows, policy subjects, explicit grants. Derive permissions from policy rules, ability declarations, authorization calls, permission constants or access-control config. NEVER classify a permission name, method name, arbitrary string, UI label, error message or variable as a role. Specs, tests, fixtures, docs, assets, translations and generated code may corroborate but NEVER establish a role or feature.
+- IDENTITY IS SEPARATED: actors are independent security principals that can authenticate, possess credentials, or be
+  the subject of an authorization decision; roles are privilege levels assigned to those principals; permissions are
+  resource operations granted to actors/roles. Internal classes, worker processes, helper subprocesses, validators,
+  middleware, tools, AI components, and infrastructure are architecture/components, NOT actors merely because they do
+  work. A guard, validation rule, rate limit, origin check, body limit, path constraint, or safety invariant is a
+  CONTROL, NOT a permission. Do not place controls in actors/roles/permissions.
+- Derive roles ONLY from authoritative production evidence — role/access-level definitions, membership models, enums,
+  assignment workflows, policy subjects, explicit grants. Derive permissions from policy rules, ability declarations,
+  authorization calls, permission constants or access-control config. Every permission must name its resource and
+  operation and must identify at least one grounded grantee in enabled_by_roles or granted_to_actors. NEVER classify a
+  permission name, method name, arbitrary string, UI label, error message or variable as a role. Specs, tests, fixtures,
+  docs, assets, translations and generated code may corroborate but NEVER establish a role or feature.
+- For each actor, classify kind from source as human, token, service, system, or integration and record scopes when
+  source defines them. For each feature, list the grounded permission names that govern it. Permissions should preserve
+  operation/resource granularity (for example read, create, update, delete are separate abilities when source separates
+  them); never collapse them into a vague "access" permission.
 - EVERY feature, actor, role and permission MUST cite grounded evidence: { file, line, symbol, reason } pointing at real source in THIS repository. Anything you cannot ground, put in "gaps" instead of inventing it.
+- Select every feature's inventory rows using distinctive include_paths/include_symbols/include_entries/include_terms
+  and exact inventory_keys where needed. Add exclude_paths/exclude_terms to prevent tests, docs, generated files and
+  shared infrastructure from leaking into a business feature. Selectors are evidence correlation rules, not semantics.
 - Cover the whole repository without overlapping selectors where practical. For a large monolith, prefer tens of durable capabilities over thousands of implementation nouns.
-- Recon only: do not report vulnerabilities or security findings.`
+- Recon only: do not report vulnerabilities or security findings.
+
+AUTHORITATIVE RECON SKILL (${skill.root}):
+${skill.text}`
   try {
     let structured = null, sessionId = null
     const activeWorkers = new Set()
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), SDK_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
     const executable = claudeExecutable()
     onEvent({ kind: 'worker_roster', workers: Object.keys(agents), label: 'Lead prepared architecture, domain, identity and interface workers' })
     try { for await (const msg of query({ prompt, options: timedOptions({ cwd: sourceRoot, ...(resume ? { resume } : {}),
@@ -194,16 +273,16 @@ Rules:
     // Recon-only contract: DROP any feature whose label reads like a vulnerability finding, but do NOT discard the whole
     // plan for one bad label (that turned a 40-feature GitLab plan into a total block). Keep the grounded remainder.
     const total = structured.features.length
-    structured = { ...structured, features: structured.features.filter((f) => isReconFeatureLabel(f?.name)).map((f) => ({ ...f, purpose: '' })) }
+    structured = { ...structured, features: structured.features.filter((f) => isReconFeatureLabel(f?.name)) }
     if (total !== structured.features.length) onEvent({ kind: 'lead_contract', dropped: total - structured.features.length, label: `Dropped ${total - structured.features.length} feature label(s) that crossed the recon-only contract; kept ${structured.features.length}` })
     if (!structured.features.length) { onEvent({ kind: 'lead_fallback', label: 'Lead produced no recon-safe features' }); return null }
     for (const worker of activeWorkers) onEvent({ kind: 'worker_completed', worker, label: `${worker} worker context returned to Lead` })
     onEvent({ kind: 'lead_planned', session_id: sessionId, count: structured.features?.length || 0,
       roles: structured.roles?.length || 0, actors: structured.actors?.length || 0, permissions: structured.permissions?.length || 0,
       label: `Lead derived ${structured.features?.length || 0} features · ${structured.actors?.length || 0} actors · ${structured.roles?.length || 0} roles · ${structured.permissions?.length || 0} permissions` })
-    return { plan: structured, sessionId, model: MODEL }
+    return { plan: structured, sessionId, model: MODEL, reconSkill: reconSkillInfo() }
   } catch (error) {
-    onEvent({ kind: 'lead_fallback', label: `Lead unavailable; using deterministic semantic planner (${String(error?.message || error).slice(0, 140)})` })
+    onEvent({ kind: 'lead_blocked', label: `Lead unavailable; semantic mapping blocked (${String(error?.message || error).slice(0, 140)})` })
     return null
   }
 }

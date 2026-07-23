@@ -74,8 +74,8 @@ Progress log:
 - [x] S5 (slice) — identity gated to authoritative production/config evidence (kills roles-from-specs).
 - [x] S7 (slice) — renderer honest for blocked: architecture.md (clusters ≠ features), blocked banners in
       README/AI_CONTEXT/gate, extended manifest fingerprint (planner/session/model/versions/coverage).
-- [ ] S3 — expanded Lead ontology (actors/roles/permissions/relationships/evidence) + agentic workers/reconciler.
-- [ ] S4 — evidence validation (verify cited file:line/symbol exist; reject hallucinations).
+- [x] S3 — expanded Lead ontology (features+actors+roles+permissions+relationships+gaps, evidence-cited) → graph.
+- [x] S4 — evidence validation: reject hallucinated file:line/symbol + spec-only identity; rejection ledger persisted.
 - [ ] S5 (full) — identity normalization package (separate Actor/Role/Permission/…); Lead-derived roles.
 - [ ] S6 — gate never COMPLETE without Lead+reconciliation; full provenance surfaces.
 - [ ] S7 (full) — 8 entry channels, 4 empty-state tokens, roles/ matrices, byte-align to phase1-maps 3.

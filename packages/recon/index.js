@@ -15,6 +15,7 @@ import { ID, slug, safeRelPath, pipelineVersions, PROMPT_VERSION, PLANNER_VERSIO
 import { createSnapshot, getProject, sourceRootDir, snapshotDir, listSnapshots } from '../ingestion/index.js'
 import { deterministicSemanticPlan, validateLeadPlan, semanticFeatureForRow } from './semantic-planner.js'
 import { planRecon, isAvailable as claudeAvailable } from '../claude-runtime/index.js'
+import { makeEvidenceVerifier, validateOntology } from './evidence-validator.js'
 
 // Which inventories describe user-facing capabilities (→ features) vs shared infrastructure.
 const FEATURE_KINDS = new Set(['routes_endpoints', 'rest_api', 'graphql', 'workers_jobs', 'services_finders_policies', 'response_shaping', 'tokens_actors', 'downloads_uploads_exports', 'search_aggregation'])
@@ -145,7 +146,7 @@ function nodeForRow(g, snapshot_id, featureId, kind, row) {
 
 // Build the full graph (into `g`) from clusters + infra; return reconciliation + gate results.
 // onProgress(ev) receives granular live events (per-feature, shares, infra) for the recon UI.
-export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, semantic = true, readSource = null, onProgress = () => {} }) {
+export function buildGraph(g, { project, snapshot, profile, inventories, featurePlan = null, semantic = true, ontology = null, readSource = null, onProgress = () => {} }) {
   const sid = snapshot.id
   const before = () => counts(g).nodes
   upsertNode(g, { type: 'PROJECT', id: project.id, name: project.name, snapshot_id: sid, data: { languages: profile.languages, frameworks: profile.frameworks } })
@@ -235,8 +236,36 @@ export function buildGraph(g, { project, snapshot, profile, inventories, feature
   }
   if (shares) onProgress({ kind: 'shares', count: shares, label: `Linked ${shares} shared-implementation edge(s)` })
 
+  if (ontology) buildOntology(g, sid, ontology, features, onProgress)
   buildInfra(g, sid, project, inventories, onProgress)
   return reconcileAndGate(g, { inventories, features, files: profile.files })
+}
+
+// Build the Claude-derived, evidence-validated identity ontology into the graph: separated ACTOR / ROLE / PERMISSION
+// nodes (each with a grounded provenance claim), role→permission wiring (REQUIRES_ROLE), permission↔feature grants
+// (AUTHORIZED_BY), and feature actor reach. This is the SEMANTIC identity layer — meaning derived by Claude, grounded
+// to source — distinct from the deterministic authoritative-evidence role facts. Only runs when the Lead succeeded.
+function buildOntology(g, sid, ontology, features, onProgress) {
+  const featBySlug = new Map(features.map((f) => [f.slug, ID.feature(f.domain, f.slug)]))
+  const ev0 = (e) => (Array.isArray(e?.evidence) && e.evidence[0]) || null
+  const claimFrom = (nodeId, field, ev) => { if (ev?.file) addClaim(g, { id: `c:${nodeId}:${field}:${ev.file}:${ev.line || 1}`, node_id: nodeId, field, snapshot_id: sid, file: ev.file, line_start: ev.line || 1, confidence: 'high', method: 'llm-map' }) }
+  const roleId = (name) => ID.role(slug(name)); const permId = (name) => `permission:${slug(name)}`; const actorId = (name) => ID.scoped('actor', slug(name))
+  const made = new Set()   // created node ids — edges only connect existing endpoints (upsertEdge throws on dangling)
+  const link = (type, from, to, data) => { if (made.has(from) && made.has(to)) upsertEdge(g, { type, from, to, snapshot_id: sid, data }) }
+  let roles = 0, perms = 0, actors = 0
+  // PASS 1 — all identity nodes first (so PASS-2 edges never dangle).
+  for (const a of ontology.actors || []) { if (!slug(a.name)) continue; const id = actorId(a.name); if (made.has(id)) continue
+    upsertNode(g, { type: 'ACTOR', id, name: a.name, snapshot_id: sid, data: { obtained_via: a.obtained_via || null, hierarchical: !!a.hierarchical, source: ev0(a)?.file || null } }); claimFrom(id, 'actor', ev0(a)); made.add(id); actors++ }
+  for (const r of ontology.roles || []) { if (!slug(r.name)) continue; const id = roleId(r.name); if (made.has(id)) continue
+    upsertNode(g, { type: 'ROLE', id, name: titleize(String(r.name).replace(/[_-]+/g, ' ')), snapshot_id: sid, data: { hierarchical: !!r.hierarchical, source: ev0(r)?.file || null, lead_derived: true } }); claimFrom(id, 'role', ev0(r)); made.add(id); roles++ }
+  for (const p of ontology.permissions || []) { if (!slug(p.name)) continue; const id = permId(p.name); if (made.has(id)) continue
+    upsertNode(g, { type: 'PERMISSION', id, name: String(p.name).replace(/[_-]+/g, ' '), snapshot_id: sid, data: { source: ev0(p)?.file || null, lead_derived: true } }); claimFrom(id, 'permission', ev0(p)); made.add(id); perms++ }
+  // PASS 2 — wiring: role→permission, permission→role, feature→actor reach.
+  for (const r of ontology.roles || []) for (const p of r.enables || []) link('AUTHORIZED_BY', roleId(r.name), permId(p), { relationship: 'role-enables-permission' })
+  for (const p of ontology.permissions || []) for (const rn of p.enabled_by_roles || []) link('REQUIRES_ROLE', permId(p.name), roleId(rn), { relationship: 'permission-requires-role' })
+  for (const f of ontology.features || []) { const fid = featBySlug.get(f.slug); if (!fid) continue
+    for (const an of f.actors || []) if (made.has(actorId(an))) upsertEdge(g, { type: 'AUTHENTICATED_BY', from: fid, to: actorId(an), snapshot_id: sid, data: { relationship: 'feature-reachable-by-actor' } }) }
+  if (roles || perms || actors) onProgress({ kind: 'ontology_built', roles, permissions: perms, actors, label: `Built Lead ontology: ${actors} actors · ${roles} roles · ${perms} permissions (source-grounded)` })
 }
 
 // Infra rows → project-level nodes (SHARED_INFRASTRUCTURE), never features. Each gets a provenance claim (#6) and
@@ -382,12 +411,13 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   // FAIL-CLOSED planning. Only Claude may derive repository meaning. Precedence: sealed SEMANTIC plan reuse →
   // Claude Lead (bounded retry) → BLOCKED. A blocked run preserves technical clusters as architecture, never features.
   const requestedPlanner = agentic ? 'agent-lead' : 'blocked'
-  let lead = null, featurePlan = null, executedPlanner = 'blocked', semantic = false, model = null
+  const readSource = (rel) => { try { return fs.readFileSync(path.join(src, safeRelPath(rel)), 'utf8') } catch { return '' } }
+  let lead = null, featurePlan = null, ontology = null, executedPlanner = 'blocked', semantic = false, model = null
   let failureReason = null, validation = null
   if (reused) try {
     const sealedPlan = JSON.parse(fs.readFileSync(path.join(snapDir, 'publications', existingPublication.pub, 'feature-plan.json'), 'utf8'))
     if (sealedPlan.plan_fingerprint === planFingerprint && sealedPlan.semantic === true && Array.isArray(sealedPlan.features) && sealedPlan.features.length) {
-      featurePlan = sealedPlan.features; executedPlanner = 'sealed-plan-reuse'; semantic = true
+      featurePlan = sealedPlan.features; ontology = sealedPlan.ontology || null; executedPlanner = 'sealed-plan-reuse'; semantic = true
       lead = { sessionId: existingPublication?.lead_session_id || null }
     }
   } catch {}
@@ -396,9 +426,17 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
       resume: existingPublication?.lead_session_id || previousPublication?.lead_session_id || null, onEvent: onProgress })
     lead = r.lead; model = r.model; failureReason = r.failureReason
     if (lead?.plan) {
-      const validated = validateLeadPlan(lead.plan, inventories)   // S3/S4: ontology → grounded feature plan (evidence-validated)
-      if (validated && validated.length) { featurePlan = validated; executedPlanner = 'agent-lead'; semantic = true; validation = { ok: true, features: validated.length } }
-      else { failureReason = failureReason || 'Lead plan failed ontology validation (no grounded features)'; validation = { ok: false, reason: failureReason } }
+      const validated = validateLeadPlan(lead.plan, inventories)   // feature rows: assign every inventory row to a Lead feature
+      if (validated && validated.length) {
+        featurePlan = validated; executedPlanner = 'agent-lead'; semantic = true
+        // S4: REJECT any ontology entity whose cited evidence does not exist in the frozen snapshot (anti-hallucination),
+        // and require roles/permissions/actors to cite AUTHORITATIVE production evidence — not specs/fixtures/strings.
+        const vres = validateOntology(lead.plan, makeEvidenceVerifier({ readSource }))
+        ontology = vres.ontology
+        validation = { ok: true, features: validated.length, ...vres.accepted, rejected: vres.rejected.length, rejections: vres.rejected.slice(0, 40) }
+        onProgress({ kind: 'ontology_validated', accepted: vres.accepted, rejected: vres.rejected.length,
+          label: `Ontology validated — ${vres.accepted.roles} roles · ${vres.accepted.permissions} permissions · ${vres.accepted.actors} actors grounded; ${vres.rejected.length} ungrounded entities rejected` })
+      } else { failureReason = failureReason || 'Lead plan failed ontology validation (no grounded features)'; validation = { ok: false, reason: failureReason } }
     }
   } else if (!featurePlan && agentic) {
     failureReason = 'Claude Agent SDK not available (not installed or not logged in)'
@@ -432,15 +470,14 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
         inventory_rows: f.rows.length, status: 'PLANNED', kind: semantic ? 'feature' : 'arch_cluster', planning_method: f.planning_method })) }
     fs.writeFileSync(missionPath, JSON.stringify(mission, null, 2))
     fs.writeFileSync(path.join(attempt, 'feature-plan.json'), JSON.stringify({ plan_fingerprint: planFingerprint,
-      inventory_fingerprint: inventoryFingerprint, semantic, ...planProvenance, features: featurePlan }, null, 2))
+      inventory_fingerprint: inventoryFingerprint, semantic, ...planProvenance, features: featurePlan, ontology }, null, 2))
     onPhase({ phase: 'graph', label: semantic ? 'Mapping features + building the graph' : 'Preserving technical architecture (semantic planning blocked)' })
     let staging = null, index = null, result, merged, crosscheck
     try {
       staging = openGraph(path.join(attempt, 'staging.sqlite'))
       staging.exec('BEGIN')
       try {
-        const readSource = (rel) => { try { return fs.readFileSync(path.join(src, safeRelPath(rel)), 'utf8') } catch { return '' } }
-        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, semantic, readSource, onProgress })
+        result = buildGraph(staging, { project, snapshot: snapshot.file_count != null ? snapshot : { id: sid, file_count: profile.files, content_hash: '' }, profile, inventories, featurePlan, semantic, ontology, readSource, onProgress })
         staging.exec('COMMIT')
         mission.workstreams = mission.workstreams.map((w) => ({ ...w, status: 'COMPLETED', completed_at: new Date().toISOString() }))
         mission.completed_at = new Date().toISOString()

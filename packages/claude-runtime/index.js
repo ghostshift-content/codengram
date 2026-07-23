@@ -12,6 +12,7 @@ let _sdk           // cached dynamic import result: module | null
 let _probed = false
 let _claudePath
 const SDK_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODENGRAM_AI_TIMEOUT_MS) || 120_000)
+const MODEL = process.env.CODENGRAM_MODEL || 'claude-agent-sdk'   // recorded in provenance; SDK owns the concrete model
 
 // Recon accepts capability labels, not vulnerability findings. Legitimate target features such as
 // "Vulnerability Management" remain valid; finding-shaped labels, exploit claims and severity labels do not.
@@ -104,13 +105,28 @@ export async function askClaude({ preamble, question, bundle }) {
   } catch { return null }   // any SDK/auth failure → fall back to deterministic answer
 }
 
+// A cited piece of source evidence. `file` is mandatory; `line`/`symbol`/`reason` sharpen it. The caller REJECTS any
+// entity whose evidence does not verify against the frozen snapshot (see evidence-validator.js).
+const EVIDENCE = { type: 'array', maxItems: 12, items: { type: 'object', additionalProperties: false, required: ['file'],
+  properties: { file: { type: 'string' }, line: { type: 'integer' }, symbol: { type: 'string' }, reason: { type: 'string' } } } }
+// The full repository-specific ontology the Lead derives — features + the SEPARATED identity model + relationships +
+// honest gaps. Every entity carries grounded evidence; nothing is accepted on the model's word alone.
 const PLAN_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['features'], properties: {
-    features: { type: 'array', maxItems: 250, items: { type: 'object', additionalProperties: false,
+    features: { type: 'array', maxItems: 300, items: { type: 'object', additionalProperties: false,
       required: ['name', 'slug', 'domain', 'purpose', 'include_paths', 'include_terms'], properties: {
         name: { type: 'string' }, slug: { type: 'string' }, domain: { type: 'string' }, purpose: { type: 'string' },
         include_paths: { type: 'array', items: { type: 'string' } }, include_terms: { type: 'array', items: { type: 'string' } },
-      } } },
+        actors: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
+    actors: { type: 'array', maxItems: 60, items: { type: 'object', additionalProperties: false, required: ['name'],
+      properties: { name: { type: 'string' }, obtained_via: { type: 'string' }, hierarchical: { type: 'boolean' }, evidence: EVIDENCE } } },
+    roles: { type: 'array', maxItems: 120, items: { type: 'object', additionalProperties: false, required: ['name'],
+      properties: { name: { type: 'string' }, hierarchical: { type: 'boolean' }, enables: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
+    permissions: { type: 'array', maxItems: 400, items: { type: 'object', additionalProperties: false, required: ['name'],
+      properties: { name: { type: 'string' }, enabled_by_roles: { type: 'array', items: { type: 'string' } }, evidence: EVIDENCE } } },
+    relationships: { type: 'array', maxItems: 400, items: { type: 'object', additionalProperties: false, required: ['from', 'to'],
+      properties: { from: { type: 'string' }, to: { type: 'string' }, kind: { type: 'string' } } } },
+    gaps: { type: 'array', maxItems: 60, items: { type: 'string' } },
   },
 }
 
@@ -136,15 +152,16 @@ export async function planRecon({ sourceRoot, profile, inventoryCounts, resume =
 Repository profile: ${JSON.stringify(profile)}
 Inventory counts: ${JSON.stringify(inventoryCounts)}
 
-Delegate architecture, domain, identity and interface reconnaissance to the supplied subagents where useful. Then produce ONE semantic feature plan for the entire repository.
+Delegate architecture, domain, identity and interface reconnaissance to the supplied subagents where useful. Then produce ONE repository-specific ONTOLOGY: features, actors, roles, permissions, relationships and honest gaps.
 
 Rules:
-- A feature is a coherent business capability, not a file, class, test, migration, serializer or GraphQL type.
+- A feature is a coherent business capability, NOT a file, class, directory, test, migration, serializer or GraphQL type. A directory named "admin", "issues" or "payments" is NOT automatically a feature — only real, source-proven capabilities are.
 - Group web routes, REST/GraphQL operations, services, models, workers, policies and UI paths implementing the same capability.
 - Keep shared infrastructure outside feature names.
 - include_paths and include_terms must be distinctive selectors grounded in paths/names you inspected.
-- Cover the whole repository without overlapping selectors where practical.
-- For a large monolith, prefer tens of durable capabilities over thousands of implementation nouns.
+- IDENTITY IS SEPARATED: actors (who acts), roles (privilege levels), permissions (abilities). Derive roles ONLY from authoritative production evidence — role/access-level definitions, membership models, enums, assignment workflows, policy subjects, explicit grants. Derive permissions from policy rules, ability declarations, authorization calls, permission constants or access-control config. NEVER classify a permission name, method name, arbitrary string, UI label, error message or variable as a role. Specs, tests, fixtures, docs, assets, translations and generated code may corroborate but NEVER establish a role or feature.
+- EVERY feature, actor, role and permission MUST cite grounded evidence: { file, line, symbol, reason } pointing at real source in THIS repository. Anything you cannot ground, put in "gaps" instead of inventing it.
+- Cover the whole repository without overlapping selectors where practical. For a large monolith, prefer tens of durable capabilities over thousands of implementation nouns.
 - Recon only: do not report vulnerabilities or security findings.`
   try {
     let structured = null, sessionId = null
@@ -172,12 +189,14 @@ Rules:
       onEvent({ kind: 'lead_fallback', label: 'Lead output crossed the recon-only contract; using deterministic semantic planner' })
       return null
     }
-    // AI chooses coherent groupings/selectors. Persisted descriptions are regenerated from grounded inventory.
+    // AI chooses coherent groupings/selectors. Persisted descriptions are regenerated from grounded inventory. The
+    // identity ontology (actors/roles/permissions/relationships/gaps) passes through for evidence validation downstream.
     structured = { ...structured, features: structured.features.map((f) => ({ ...f, purpose: '' })) }
     for (const worker of activeWorkers) onEvent({ kind: 'worker_completed', worker, label: `${worker} worker context returned to Lead` })
     onEvent({ kind: 'lead_planned', session_id: sessionId, count: structured.features?.length || 0,
-      label: `Lead consolidated ${structured.features?.length || 0} semantic features` })
-    return { plan: structured, sessionId }
+      roles: structured.roles?.length || 0, actors: structured.actors?.length || 0, permissions: structured.permissions?.length || 0,
+      label: `Lead derived ${structured.features?.length || 0} features · ${structured.actors?.length || 0} actors · ${structured.roles?.length || 0} roles · ${structured.permissions?.length || 0} permissions` })
+    return { plan: structured, sessionId, model: MODEL }
   } catch (error) {
     onEvent({ kind: 'lead_fallback', label: `Lead unavailable; using deterministic semantic planner (${String(error?.message || error).slice(0, 140)})` })
     return null

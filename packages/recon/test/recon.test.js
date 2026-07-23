@@ -41,6 +41,7 @@ test('clustering collapses related rows into one capability (singularized noun)'
 // Test seam: a fake Claude Lead so the SEMANTIC path is exercised without the real Agent SDK. Returns a plan the
 // validator can ground against the fixture's rows (broad include_paths capture every app/lib/config row into one feature).
 const fakeLead = (features) => async () => ({ plan: { features }, sessionId: 'session:test-lead', model: 'claude-test' })
+const fakeLeadFull = (plan) => async () => ({ plan, sessionId: 'session:test-lead', model: 'claude-test' })
 const railsLead = fakeLead([{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity', purpose: '', include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user', 'issue', 'api'] }])
 
 test('buildGraph produces a connected, provenance-backed brain with SHARES edges', () => {
@@ -142,6 +143,36 @@ test('an endpoint whose handler references another feature\'s class is cross-lin
     profile: { languages: ['PHP'] }, inventories: inv2, featurePlan: [plan[0], { ...plan[1], rows: [{ kind: 'rest_api', row: inv2.rest_api[0] }] }], readSource: specRead })
   const noise = g2.prepare(`SELECT 1 FROM edges WHERE src=? AND type='EXPOSES'`).get(ID.feature('core', 'account'))
   assert.ok(!noise, 'a generated spec (openapi.json) referencing the class does not create a false cross-link')
+})
+
+test('the Lead ontology builds source-grounded actors/roles/permissions; hallucinated + spec-only identity is rejected', async () => {
+  const dir = railsFixture()
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-onto-'))
+  const project = createProject(dataRoot, dir)
+  const lead = fakeLeadFull({
+    features: [{ name: 'User Accounts', slug: 'user-accounts', domain: 'identity', purpose: '', include_paths: ['app/', 'lib/', 'config/'], include_terms: ['user'], actors: ['Member'] }],
+    actors: [{ name: 'Member', obtained_via: 'project membership', hierarchical: true, evidence: [{ file: 'app/controllers/users_controller.rb', line: 1 }] }],
+    roles: [
+      { name: 'Admin', hierarchical: true, enables: ['read_user'], evidence: [{ file: 'app/policies/user_policy.rb', line: 1 }] },  // grounded (production)
+      { name: 'Ghost', evidence: [{ file: 'does/not/exist.rb', line: 1 }] },                                                        // hallucinated file → rejected
+      { name: 'SpecOnly', evidence: [{ file: 'spec/policies/user_policy_spec.rb', line: 1 }] },                                     // spec-only → rejected
+    ],
+    permissions: [{ name: 'read_user', enabled_by_roles: ['Admin'], evidence: [{ file: 'app/policies/user_policy.rb', line: 1 }] }],
+    relationships: [],
+  })
+  const res = await scanSnapshot(dataRoot, project.id, { planLead: lead, render: (db, out, opts) => renderPhase1Maps(db, out, opts) })
+  assert.equal(res.gate.status, 'COMPLETE')
+  const g = openGraph(latestPublished(dataRoot, project.id).indexPath)
+  const roleNames = nodesByType(g, 'ROLE').map((r) => r.name)
+  assert.ok(roleNames.includes('Admin'), 'grounded production role is built')
+  assert.ok(!roleNames.some((n) => /Ghost/.test(n)), 'role citing a non-existent file is rejected')
+  assert.ok(!roleNames.some((n) => /Spec ?Only/i.test(n)), 'spec-only role is rejected (not authoritative)')
+  assert.ok(nodesByType(g, 'ACTOR').some((a) => a.name === 'Member'), 'grounded actor is built')
+  assert.ok(nodesByType(g, 'PERMISSION').some((p) => /read user/.test(p.name)), 'grounded permission is built')
+  g.close()
+  const plan = JSON.parse(fs.readFileSync(path.join(snapshotDir(dataRoot, project.id, res.snapshotId), 'publications', res.pubId, 'feature-plan.json'), 'utf8'))
+  assert.ok(plan.validation_result.rejected >= 2, 'the rejection ledger records the ungrounded identity entities')
+  fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true })
 })
 
 test('FAIL-CLOSED: with no Claude Lead, a scan publishes technical architecture only — never folder clusters as features', async () => {

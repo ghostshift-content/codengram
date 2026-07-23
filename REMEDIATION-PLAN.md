@@ -80,5 +80,5 @@ Progress log:
 - [ ] S6 — gate never COMPLETE without Lead+reconciliation; full provenance surfaces.
 - [ ] S7 (full) — 8 entry channels, 4 empty-state tokens, roles/ matrices, byte-align to phase1-maps 3.
 - [ ] S8 — UI: sessions, semantic vs technical coverage, blocked state, real matrices; kill false cov=100.
-- [ ] S9 — stack matrix (Rails/Express/FastAPI/GraphQL/React/Spring/Django/Go/PHP/CLI/unknown/polyglot) + adversarial.
+- [x] S9 (core) — adversarial (admin/issues/payments/roles never features/roles by name) + multi-stack fail-closed (express/django/go/php/unknown). 95 tests.
 - [ ] S10 — GitLab acceptance vs phase1-maps 3.

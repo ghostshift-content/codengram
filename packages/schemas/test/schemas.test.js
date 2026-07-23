@@ -4,12 +4,48 @@ import assert from 'node:assert/strict'
 import * as S from '../index.js'
 
 test('node/edge/inventory/phase contracts are complete', () => {
-  assert.equal(S.NODE_TYPES.length, 22)
+  assert.equal(S.NODE_TYPES.length, 27)
   assert.ok(S.NODE_TYPES.includes('DOMAIN'))
+  // separated identity model + the technical-cluster type that is NOT a feature
+  for (const t of ['ACTOR', 'ROLE', 'PERMISSION', 'AUTH_MECHANISM', 'AUTH_CHECK', 'RESOURCE', 'OPERATION', 'TRUST_BOUNDARY', 'ARCH_CLUSTER']) assert.ok(S.NODE_TYPES.includes(t), t)
   assert.equal(S.EDGE_TYPES.length, 16)
   assert.equal(S.INVENTORY_STATUS.length, 5)
   assert.equal(S.INVENTORY_FILES.length, 11)
   assert.equal(S.RECON_PHASES.length, 6)
+})
+
+test('fail-closed states, entry channels, empty-state tokens, follow-up classes exist', () => {
+  assert.ok(S.PUBLICATION_STATES.includes('SEMANTIC_PLANNING_BLOCKED'))
+  assert.deepEqual([...S.ENTRY_CHANNELS], ['WEB', 'REST', 'GRAPHQL', 'RPC', 'WEBSOCKET', 'CLI', 'WORKER', 'EVENT'])
+  assert.deepEqual([...S.EMPTY_STATES], ['VERIFIED_NONE', 'NOT_APPLICABLE', 'EXTRACTOR_UNSUPPORTED', 'COVERAGE_GAP'])
+  assert.deepEqual([...S.FOLLOWUP_CLASSES], ['NEW_FEATURE', 'RELATED_FEATURE', 'SHARED_INFRASTRUCTURE', 'MISSING_DEPENDENCY', 'COVERAGE_GAP', 'DUPLICATE'])
+})
+
+test('pipeline versions compose into the reuse fingerprint', () => {
+  const v = S.pipelineVersions()
+  for (const k of ['schema', 'exporter', 'planner', 'prompt', 'identity', 'renderer', 'semantic_validation']) assert.ok(v[k], k)
+})
+
+test('evidence-source authority: production/config establish identity; specs/fixtures/assets/docs never do', () => {
+  assert.equal(S.evidenceSourceKind('app/policies/issue_policy.rb'), 'production')
+  assert.equal(S.evidenceSourceKind('spec/lib/authz/permission_check_spec.rb'), 'test')
+  assert.equal(S.evidenceSourceKind('test/models/member_test.rb'), 'test')
+  assert.equal(S.evidenceSourceKind('spec/factories/users.rb'), 'test')
+  assert.equal(S.evidenceSourceKind('app/assets/javascripts/user_avatar.vue'), 'asset')
+  assert.equal(S.evidenceSourceKind('locale/en/messages.po'), 'translation')
+  assert.equal(S.evidenceSourceKind('docs/permissions.md'), 'doc')
+  assert.equal(S.evidenceSourceKind('config/roles.yml'), 'config')
+  assert.ok(S.canEstablishIdentity('app/models/member.rb'))
+  assert.ok(!S.canEstablishIdentity('spec/models/member_spec.rb'))
+  assert.ok(!S.canEstablishIdentity('app/assets/img/logo.svg'))
+})
+
+test('evidence validation rejects missing files and non-positive lines', () => {
+  assert.ok(S.isValidEvidence({ file: 'a.rb', line: 3, symbol: 'Foo', reason: 'x' }))
+  assert.ok(S.isValidEvidence({ file: 'a.rb' }))
+  assert.ok(!S.isValidEvidence({ file: '', line: 3 }))
+  assert.ok(!S.isValidEvidence({ file: 'a.rb', line: 0 }))
+  assert.ok(!S.isValidEvidence({ line: 3 }))
 })
 
 test('§7 ids are traversal-safe, non-empty, and id↔type consistent', () => {

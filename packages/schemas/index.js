@@ -4,12 +4,29 @@
 export const SCHEMA_VERSION = '0.3.0'
 export const EXPORTER_VERSION = '0.3.0'
 
+// ── Pipeline component versions — the publication fingerprint. Any bump invalidates stale plans and forces
+// regeneration (the extractor version lives in @codengram/inventories as INVENTORY_EXTRACTOR_VERSION). ──────────
+export const PLANNER_VERSION = '1.0.0'              // Lead ontology planner + agentic execution shape
+export const PROMPT_VERSION = '1.0.0'               // Lead/worker/reconciler prompt contract
+export const IDENTITY_SCHEMA_VERSION = '1.0.0'      // actor/role/permission normalization model
+export const RENDERER_SCHEMA_VERSION = '1.0.0'      // phase1-maps section/column contract
+export const SEMANTIC_VALIDATION_VERSION = '1.0.0'  // evidence-validation + ontology-acceptance rules
+// The full set of versions that gate sealed-plan reuse (recon composes these + the inventory fingerprint).
+export const pipelineVersions = () => ({
+  schema: SCHEMA_VERSION, exporter: EXPORTER_VERSION, planner: PLANNER_VERSION, prompt: PROMPT_VERSION,
+  identity: IDENTITY_SCHEMA_VERSION, renderer: RENDERER_SCHEMA_VERSION, semantic_validation: SEMANTIC_VALIDATION_VERSION,
+})
+
 // ── Knowledge-graph vocabulary — the ONLY types allowed. Prompts/plugins may NOT invent new ones; language kinds
 // (concern/finder/policy) are expressed as SERVICE/AUTH_CHECK with a `data.kind`, never as new node types. ───────
 export const NODE_TYPES = Object.freeze([
   'PROJECT', 'SNAPSHOT', 'DOMAIN', 'FILE', 'SYMBOL', 'PROCESS', 'FEATURE', 'ROUTE', 'ENDPOINT',
   'GRAPHQL_OPERATION', 'JOB', 'SERVICE', 'MODEL', 'ROLE', 'PERMISSION', 'AUTH_CHECK',
   'TOKEN', 'DATA_STORE', 'INTEGRATION', 'TRUST_BOUNDARY', 'DATA_FLOW', 'COVERAGE_GAP',
+  // Separated identity model (never conflate): who acts, what they hold, how they prove it, what they touch.
+  'ACTOR', 'AUTH_MECHANISM', 'RESOURCE', 'OPERATION',
+  // A technical cluster is a directory/namespace grouping — it is NEVER a business FEATURE unless the Lead confirms it.
+  'ARCH_CLUSTER',
 ])
 export const EDGE_TYPES = Object.freeze([
   'CONTAINS', 'DEFINES', 'EXPOSES', 'HANDLED_BY', 'CALLS', 'READS', 'WRITES',
@@ -37,6 +54,48 @@ export const INVENTORY_FILES = Object.freeze([
   '05_services_finders_policies', '06_response_shaping', '07_downloads_uploads_exports',
   '08_search_aggregation', '09_tokens_actors', '10_processes_ipc', '11_datastores_integrations',
 ])
+// ── Semantic pipeline vocabulary ─────────────────────────────────────────────────────────────
+// The planner that ACTUALLY produced a plan (persisted as executed_planner; requested_planner is what was asked).
+export const PLANNER_KINDS = Object.freeze(['agent-lead', 'sealed-plan-reuse', 'blocked'])
+// A feature worker submits discoveries to followup-features.jsonl; the Lead classifies each into exactly one class.
+export const FOLLOWUP_CLASSES = Object.freeze(['NEW_FEATURE', 'RELATED_FEATURE', 'SHARED_INFRASTRUCTURE', 'MISSING_DEPENDENCY', 'COVERAGE_GAP', 'DUPLICATE'])
+// Entry-point channels a feature map distinguishes (superset of the reference's 4; RPC/WS/CLI/EVENT render when present).
+export const ENTRY_CHANNELS = Object.freeze(['WEB', 'REST', 'GRAPHQL', 'RPC', 'WEBSOCKET', 'CLI', 'WORKER', 'EVENT'])
+// Why a section is empty — "not extracted" is NEVER proof that none exist.
+//   VERIFIED_NONE        the surface was searched and genuinely has none
+//   NOT_APPLICABLE       the surface does not apply to this stack (e.g. GraphQL in a CLI tool)
+//   EXTRACTOR_UNSUPPORTED no extractor covers this surface for this stack (directory-derived at best)
+//   COVERAGE_GAP         not mapped this pass; an explicit gap, not an absence
+export const EMPTY_STATES = Object.freeze(['VERIFIED_NONE', 'NOT_APPLICABLE', 'EXTRACTOR_UNSUPPORTED', 'COVERAGE_GAP'])
+// Evidence-source authority for identity discovery. PRODUCTION establishes a role/feature; tests/fixtures may only
+// CORROBORATE; the excluded kinds may NEVER establish a role, feature, or permission on their own.
+export const EVIDENCE_SOURCE_KINDS = Object.freeze(['production', 'test', 'fixture', 'doc', 'asset', 'translation', 'generated', 'config'])
+export const IDENTITY_ESTABLISHING_KINDS = Object.freeze(['production', 'config'])   // may establish a role/permission
+export const IDENTITY_EXCLUDED_KINDS = Object.freeze(['test', 'fixture', 'doc', 'asset', 'translation', 'generated'])
+// Classify a repo-relative path into an evidence-source kind (used to gate identity discovery). Pure + deterministic.
+export function evidenceSourceKind(path) {
+  const p = String(path || '').toLowerCase()
+  if (/(?:^|\/)(?:spec|specs|test|tests|__tests__|__mocks__|e2e|cypress|qa|features\/step_definitions)(?:\/|$)|[._-](?:spec|test)\.[a-z0-9]+$|_test\.[a-z0-9]+$/.test(p)) return 'test'
+  if (/(?:^|\/)(?:fixtures?|factories|seeds?|testdata|mock_data|__fixtures__)(?:\/|$)/.test(p)) return 'fixture'
+  if (/(?:^|\/)(?:docs?|documentation|examples?)(?:\/|$)|\.(?:md|mdx|rst|adoc|txt)$/.test(p)) return 'doc'
+  if (/(?:^|\/)(?:locales?|i18n|translations?|lang)(?:\/|$)|\.(?:po|pot|mo|arb)$/.test(p)) return 'translation'
+  if (/(?:^|\/)(?:assets?|static|public|images?|fonts?|vendor|node_modules|dist|build)(?:\/|$)|\.(?:png|jpe?g|gif|svg|css|scss|ico|woff2?)$/.test(p)) return 'asset'
+  if (/(?:\.generated\.|_pb\.|\.pb\.|\.g\.dart$|\.freezed\.|autogenerated|\bgenerated\b)/.test(p)) return 'generated'
+  if (/(?:^|\/)config(?:\/|$)|\.(?:ya?ml|toml|ini|env|properties)$/.test(p)) return 'config'
+  return 'production'
+}
+export const canEstablishIdentity = (path) => IDENTITY_ESTABLISHING_KINDS.includes(evidenceSourceKind(path))
+
+// A single piece of grounded evidence backing an ontology entity: an existing file, a line, an optional symbol,
+// and a human reason. The evidence validator later proves file:line/symbol actually exist in the snapshot.
+export function isValidEvidence(e) {
+  if (!(e && typeof e === 'object')) return false
+  if (typeof e.file !== 'string' || !e.file) return false
+  if (e.line != null && !(Number.isInteger(e.line) && e.line > 0)) return false
+  if (e.symbol != null && typeof e.symbol !== 'string') return false
+  return true
+}
+
 export const RECON_PHASES = Object.freeze([
   { n: 1, key: 'scale_and_shape', title: 'Scale & shape' },
   { n: 2, key: 'architecture', title: 'Architecture, processes, IPC, stores, external services' },
@@ -49,7 +108,9 @@ export const RECON_PHASES = Object.freeze([
 // ── Three separate state machines (mission ≠ task ≠ publication). ────────────────────────────────────────────
 export const MISSION_STATES = Object.freeze(['QUEUED', 'PROFILING', 'PLANNING', 'RUNNING', 'RECONCILING', 'PAUSED_QUOTA', 'CANCELLING', 'CANCELLED', 'FAILED', 'COMPLETED'])
 export const TASK_STATES = Object.freeze(['QUEUED', 'CLAIMED', 'RUNNING', 'RETRY_WAIT', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED', 'BLOCKED'])
-export const PUBLICATION_STATES = Object.freeze(['UNPUBLISHED', 'COMPLETE', 'COMPLETE_WITH_GAPS'])
+// SEMANTIC_PLANNING_BLOCKED: Claude could not derive meaning (unavailable/invalid) — we publish deterministic
+// technical inventories + architecture ONLY, never folder clusters as mapped business features, never claim 100%.
+export const PUBLICATION_STATES = Object.freeze(['UNPUBLISHED', 'COMPLETE', 'COMPLETE_WITH_GAPS', 'SEMANTIC_PLANNING_BLOCKED'])
 const MISSION_TERMINAL = new Set(['CANCELLED', 'FAILED', 'COMPLETED'])
 const TASK_TERMINAL = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'BLOCKED'])
 const MISSION_TX = {
@@ -142,7 +203,17 @@ export function isValidClaim(c) {
 // self-check
 if (import.meta.url === `file://${process.argv[1]}`) {
   const assert = await import('node:assert')
-  assert.ok(NODE_TYPES.length === 22 && NODE_TYPES.includes('DOMAIN'))
+  assert.ok(NODE_TYPES.length === 27 && NODE_TYPES.includes('DOMAIN') && NODE_TYPES.includes('ACTOR') && NODE_TYPES.includes('ARCH_CLUSTER'))
+  // fail-closed + vocabulary
+  assert.ok(PUBLICATION_STATES.includes('SEMANTIC_PLANNING_BLOCKED'))
+  assert.ok(ENTRY_CHANNELS.length === 8 && EMPTY_STATES.length === 4 && FOLLOWUP_CLASSES.length === 6)
+  // evidence-source authority: production/config establish identity; specs/fixtures/assets never do
+  assert.equal(evidenceSourceKind('app/policies/issue_policy.rb'), 'production')
+  assert.equal(evidenceSourceKind('spec/lib/authz/permission_check_spec.rb'), 'test')
+  assert.equal(evidenceSourceKind('app/assets/javascripts/user_avatar.vue'), 'asset')
+  assert.equal(evidenceSourceKind('config/roles.yml'), 'config')
+  assert.ok(canEstablishIdentity('app/models/member.rb') && !canEstablishIdentity('spec/models/member_spec.rb'))
+  assert.ok(isValidEvidence({ file: 'a.rb', line: 3, symbol: 'Foo' }) && !isValidEvidence({ file: 'a.rb', line: 0 }))
   // id↔type consistency
   assert.ok(isValidNode({ type: 'FEATURE', id: ID.feature('identity', 'oauth') }) && !isValidNode({ type: 'FEATURE', id: 'x' }))
   // #7 traversal + empty rejection
@@ -154,5 +225,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // #7 claim strictness
   assert.ok(!isValidClaim({})); assert.ok(!isValidClaim({ claim_id: 'c', node_id: 'n', edge_id: 'e', field: 'x', provenance: provenance({ snapshot_id: 's', file: 'a', method: 'manifest' }) }))
   assert.ok(isValidClaim({ claim_id: 'c', node_id: ID.feature('d', 'f'), field: 'purpose', provenance: provenance({ snapshot_id: 's', file: 'Gemfile', method: 'manifest' }) }))
-  console.log('ok — schemas: DOMAIN type, safe ids, ordered provenance, strict claims, id↔type consistency')
+  console.log('ok — schemas: identity types, fail-closed states, evidence authority, ordered provenance, strict claims')
 }

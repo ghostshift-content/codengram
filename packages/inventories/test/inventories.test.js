@@ -153,6 +153,101 @@ test('universal fallback maps a Python (FastAPI/Django) and a Go repo', () => {
   fs.rmSync(go, { recursive: true, force: true })
 })
 
+test('Django DRF plugin maps APIViews, SimpleJWT, viewsets, and authorization declarations', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-drf-'))
+  write(d, 'requirements.txt', 'Django==5.1\ndjangorestframework==3.15\ndjangorestframework-simplejwt==5.3\n')
+  write(d, 'app/views.py', `from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import BasicAuthentication
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+
+class UserView(APIView):
+    permission_classes = []
+    authentication_classes = []
+
+    def post(self, request):
+        return Response({})
+
+class QuotesView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [BasicAuthentication]
+
+    def get(self, request):
+        return Response([])
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def api_logout(request):
+    return Response({})
+
+def custom_logout_view(request):
+    return Response({})
+`)
+  write(d, 'app/viewsets.py', `from rest_framework.viewsets import ModelViewSet
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+
+class QuoteViewSet(ModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['post'])
+    def publish_now(self, request, pk=None):
+        pass
+`)
+  write(d, 'app/urls.py', `from django.urls import path
+from rest_framework_simplejwt.views import TokenObtainPairView as LoginTokenView, TokenRefreshView
+from .views import UserView, QuotesView, api_logout, custom_logout_view
+
+urlpatterns = [
+    path('users/', UserView.as_view(), name='users'),
+    path(
+        'quotes/',
+        QuotesView.as_view(),
+        name='quotes',
+    ),
+    path('api/token/', LoginTokenView.as_view(), name='token'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/logout/', api_logout, name='api_logout'),
+    path('logout/', custom_logout_view, name='logout'),
+    path('', QuotesView.as_view(), name='root_quotes'),
+]
+`)
+  write(d, 'app/router.py', `from rest_framework.routers import DefaultRouter
+from .viewsets import QuoteViewSet
+router = DefaultRouter()
+router.register('quote-items', QuoteViewSet, basename='quote')
+`)
+
+  const profile = profileRepo(d)
+  assert.ok(profile.frameworks.includes('Django'))
+  const inv = extractInventories({ sourceRoot: d, profile })
+  assert.ok(inv.rest_api.some(r => r.method === 'POST' && r.path === '/users/' && r.handler === 'UserView'))
+  const quotes = inv.rest_api.find(r => r.method === 'GET' && r.path === '/quotes/')
+  assert.ok(quotes)
+  assert.match(quotes.auth_notes, /IsAuthenticated/)
+  assert.match(quotes.auth_notes, /BasicAuthentication/)
+  assert.ok(inv.rest_api.some(r => r.method === 'POST' && r.path === '/api/token/' && r.api_class === 'TokenObtainPairView'))
+  assert.ok(inv.rest_api.some(r => r.method === 'POST' && r.path === '/api/token/refresh/' && r.api_class === 'TokenRefreshView'))
+  assert.ok(inv.rest_api.some(r => r.method === 'DELETE' && r.path === '/api/logout/' && r.handler === 'api_logout'))
+  assert.ok(inv.rest_api.some(r => r.method === 'GET' && r.path === '/' && r.handler === 'QuotesView'), 'empty Django root path is retained')
+  assert.ok(!inv.rest_api.some(r => r.path === '/logout/'), 'plain Django function view is not misclassified as REST')
+
+  assert.ok(inv.rest_api.some(r => r.method === 'GET' && r.path === '/quote-items/'))
+  assert.ok(inv.rest_api.some(r => r.method === 'POST' && r.path === '/quote-items/'))
+  assert.ok(inv.rest_api.some(r => r.method === 'GET' && r.path === '/quote-items/{pk}/'))
+  assert.ok(inv.rest_api.some(r => r.method === 'POST' && r.path === '/quote-items/{pk}/publish-now/'))
+
+  assert.ok(inv.routes_endpoints.some(r => r.path === '/logout/' && r.plugin === 'django-drf'), 'general Django route ledger is preserved')
+  const permission = inv.tokens_actors.find(r => /QuotesView permission_classes/.test(r.entry))
+  const authentication = inv.tokens_actors.find(r => /QuotesView authentication_classes/.test(r.entry))
+  assert.ok(permission && permission.line === 15, 'permission declaration has its exact source line')
+  assert.ok(authentication && authentication.line === 16, 'authentication declaration has its exact source line')
+  assert.ok(inv.tokens_actors.some(r => /api_logout permission_classes/.test(r.entry)), 'function decorator authorization is mapped')
+  assert.equal(inventoryMeta(inv).matched_plugins.includes('django-drf'), true)
+  fs.rmSync(d, { recursive: true, force: true })
+})
+
 test('a Rails repo still uses the precise Rails plugin, not the universal fallback', () => {
   const dir = railsFixture()
   const inv = extractInventories({ sourceRoot: dir, profile: profileRepo(dir) })

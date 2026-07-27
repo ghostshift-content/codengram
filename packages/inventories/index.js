@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { INVENTORY_KEYS, Registry, definePlugin } from '../plugins/index.js'
 import { isCodeFile } from '../profiler/index.js'   // THE canonical feature-bearing predicate (one shared table)
+import { djangoDrfPlugin } from './django-drf.js'
 
 // ── extraction context over a frozen source tree ───────────────────────────────────────────────
 const SKIP_DIR = new Set(['node_modules', '.git', 'vendor', '3rdparty', 'dist', 'build', 'coverage', 'tmp', 'log', 'logs', 'target', 'cypress', '__tests__', '__mocks__'])
@@ -222,7 +223,11 @@ export const railsPlugin = definePlugin({
   },
 })
 
-export function builtinRegistry() { return new Registry().register(railsPlugin) }
+export function builtinRegistry() {
+  return new Registry()
+    .register(railsPlugin)
+    .register(djangoDrfPlugin)
+}
 
 // ── universal polyglot extractor (fallback for ANY language) ────────────────────────────────────
 // Language-specific plugins (Rails) give the most precise map. When none matches the stack, this fallback still
@@ -236,7 +241,7 @@ const DOWNLOAD_DEF = /\b(?:(?:function|def|func)\s+\w*(?:upload|download|export|
 const SEARCH_DEF = /\b(?:(?:function|def|func)\s+\w*(?:search|query|aggregate|facet)\w*|(?:public|private|protected|async|static)\s+(?:\w+\s+)?\w*(?:search|query|aggregate|facet)\w*\s*\(|Elasticsearch\w*\s*\(|OpenSearch\w*\s*\(|Solr\w*\s*\(|Meilisearch\w*\s*\(|Algolia\w*\s*\()/i
 const GRAPHQL_DEF = /\b(?:type\s+(?:Query|Mutation|Subscription)\b|extend\s+type\b|@Resolver\b|@Query\b|@Mutation\b|GraphQLObjectType|buildSchema\b|gql`)/i
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'options', 'head', 'trace'])
-export const INVENTORY_EXTRACTOR_VERSION = 'universal-v2'
+export const INVENTORY_EXTRACTOR_VERSION = 'universal-v3'
 const INVENTORY_META = Symbol.for('codengram.inventory.meta')
 export const inventoryMeta = (inventories) => inventories?.[INVENTORY_META] || {
   extractor_version: INVENTORY_EXTRACTOR_VERSION, matched_plugins: [], universal_used: false,

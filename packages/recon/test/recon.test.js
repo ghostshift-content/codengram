@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { clusterFeatures, buildGraph, scanSnapshot, latestPublished } from '../index.js'
+import { clusterFeatures, buildGraph, scanSnapshot, latestPublished, summarizeClusters } from '../index.js'
 import { openGraph, counts, nodesByType, neighbourhood } from '../../graph/index.js'
 import { renderPhase1Maps } from '../../markdown-renderer/index.js'
 import { extractInventories } from '../../inventories/index.js'
@@ -36,6 +36,14 @@ test('clustering collapses related rows into one capability (singularized noun)'
   assert.ok(files.has('config/routes.rb') && files.has('app/controllers/users_controller.rb'))
   assert.ok(files.has('app/services/create_user_service.rb') && files.has('app/policies/user_policy.rb'))
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('complete cluster summaries can exceed the old 400-cluster ceiling without silent loss', () => {
+  const clusters = Array.from({ length: 525 }, (_, i) => ({ slug: `module-${i}`, domain: 'modules', name: `Module ${i}`,
+    rows: [{ kind: 'services_finders_policies', row: { file: `packages/module-${i}/service.ts`, line: 1, entry: `Service${i}` } }] }))
+  const summaries = summarizeClusters(clusters, { maxClusters: Number.MAX_SAFE_INTEGER })
+  assert.equal(summaries.length, clusters.length)
+  assert.equal(summaries.at(-1).slug, 'module-524')
 })
 
 // Test seam: a fake Claude Lead so the SEMANTIC path is exercised without the real Agent SDK. Returns a plan the

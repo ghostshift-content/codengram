@@ -41,10 +41,12 @@ function emit(pid, ev) {
   if (ev.phase) m.phase = ev.phase
   const progress = missionProgress(m, ev)
   const stamp = { ...ev, t: clock(), mission: ev.mission || m0?.mission, progress,
-    mapped_features: m.mapped_features || 0, planned_features: m.planned_features || 0 }
+    mapped_features: m.mapped_features || 0, planned_features: m.planned_features || 0,
+    planning_workstreams: m.planning_workstreams || 0, completed_workstreams: m.completed_workstreams || 0 }
   // Heartbeats can arrive many times per minute. Coalesce identical adjacent activity so they cannot evict the
   // phase changes, worker roster and planning events a reconnecting dashboard needs to rebuild mission state.
-  if (ev.kind === 'lead_activity' && m.events[0]?.kind === ev.kind && m.events[0]?.label === ev.label) {
+  if ((ev.kind === 'lead_activity' || ev.kind === 'workstream_activity') && m.events[0]?.kind === ev.kind
+    && m.events[0]?.label === ev.label && m.events[0]?.workstream === ev.workstream) {
     stamp.repeats = (m.events[0].repeats || 1) + 1
     m.events[0] = stamp
   } else m.events.unshift(stamp)
@@ -73,8 +75,11 @@ const PHASE_PROGRESS = { start: 1, freeze: 5, profile: 15, inventories: 25, plan
 export function missionProgress(state = {}, ev = {}) {
   if (ev.kind === 'features_planned' || ev.kind === 'semantic_plan') state.planned_features = Math.max(0, Number(ev.count) || 0)
   if (ev.kind === 'feature_mapped') state.mapped_features = Math.min(state.planned_features || Infinity, (state.mapped_features || 0) + 1)
+  if (ev.kind === 'planning_workstreams') { state.planning_workstreams = Math.max(0, Number(ev.total) || 0); state.completed_workstreams = Math.max(0, Number(ev.completed) || 0) }
+  if (ev.kind === 'workstream_completed') state.completed_workstreams = Math.min(state.planning_workstreams || Infinity, (state.completed_workstreams || 0) + 1)
   const phase = ev.phase || state.phase || 'start'
   let progress = PHASE_PROGRESS[phase] ?? state.progress ?? 0
+  if (phase === 'planning' && state.planning_workstreams > 0) progress = 40 + Math.round(Math.min(1, (state.completed_workstreams || 0) / state.planning_workstreams) * 9)
   if ((phase === 'graph' || ev.kind === 'feature_mapped') && state.planned_features > 0) {
     progress = 50 + Math.round(Math.min(1, (state.mapped_features || 0) / state.planned_features) * 30)
   }
@@ -153,6 +158,7 @@ export async function startServer({ dataRoot, port = 4173 } = {}) {
           return json(res, 200, { events: live?.events || [], running: !!live?.running, mission: live?.mission || null,
             phase: live?.phase || null, started_at: live?.started_at || null,
             progress: live?.progress || 0, mapped_features: live?.mapped_features || 0, planned_features: live?.planned_features || 0,
+            planning_workstreams: live?.planning_workstreams || 0, completed_workstreams: live?.completed_workstreams || 0,
             elapsed_seconds: live?.started_at ? Math.floor((Date.now() - live.started_at) / 1000) : null })
         }
 
@@ -321,6 +327,7 @@ function projectSummary(dataRoot, p) {
     base.active_mission = live.mission
     base.runtime = { phase: live.phase || 'start', latest: live.events[0]?.label || 'Starting recon',
       progress: live.progress || 0, mapped_features: live.mapped_features || 0, planned_features: live.planned_features || 0,
+      planning_workstreams: live.planning_workstreams || 0, completed_workstreams: live.completed_workstreams || 0,
       started_at: live.started_at || null, elapsed_seconds: live.started_at ? Math.floor((Date.now() - live.started_at) / 1000) : null }
   }
   return base

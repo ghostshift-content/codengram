@@ -154,7 +154,7 @@
     const projects=(await api('/projects')).projects||[];
     PROJECTS=await Promise.all(projects.map(async p=>{ try{
       const a=await api('/projects/'+encodeURIComponent(p.id)+'/activity');
-      if(a.running) return {...p,status:'scanning',cov:a.progress||0,active_mission:a.mission,runtime:{phase:a.phase||'planning',progress:a.progress||0,mapped_features:a.mapped_features||0,planned_features:a.planned_features||0,latest:(a.events&&a.events[0]&&a.events[0].label)||'Recon active'}};
+      if(a.running) return {...p,status:'scanning',cov:a.progress||0,active_mission:a.mission,runtime:{phase:a.phase||'planning',progress:a.progress||0,mapped_features:a.mapped_features||0,planned_features:a.planned_features||0,planning_workstreams:a.planning_workstreams||0,completed_workstreams:a.completed_workstreams||0,latest:(a.events&&a.events[0]&&a.events[0].label)||'Recon active'}};
     }catch{} return p; }));
   }catch{ PROJECTS=[]; } }
 
@@ -227,16 +227,16 @@
 
   // ── RECON (live progress) ───────────────────────────────────────────────
   const PHASES=[['freeze','Freeze snapshot'],['profile','Profile scale & shape'],['inventories','Extract inventories'],['planning','Lead + teammate planning'],['graph','Build canonical graph'],['render','Generate + validate maps'],['seal','Seal + publish'],['ready','Brain ready']];
-  let scan={nodes:[],edges:[],events:[],phase:'start',cov:0,mapped:0,planned:0,done:false,summary:null,mission:null,lead:null,workers:{}};
+  let scan={nodes:[],edges:[],events:[],phase:'start',cov:0,mapped:0,planned:0,workstreams:0,workstreamsDone:0,done:false,summary:null,mission:null,lead:null,workers:{}};
   const FAMS={project:{c:'--node-1',r:22},domain:{c:'--node-2',r:15},feature:{c:'--color-accent',r:9}};
   function startRecon(){ if(!cur)return; mode='recon'; view='brain';
-    scan={nodes:[{id:'p',label:cur.name,fam:'project',on:true}],edges:[],events:[],phase:'start',cov:0,mapped:0,planned:0,done:false,summary:null,lead:null,workers:{}};
+    scan={nodes:[{id:'p',label:cur.name,fam:'project',on:true}],edges:[],events:[],phase:'start',cov:0,mapped:0,planned:0,workstreams:0,workstreamsDone:0,done:false,summary:null,lead:null,workers:{}};
     render();
     api('/projects/'+encodeURIComponent(cur.id)+'/recon',{method:'POST'});
     openStream();
   }
   function resumeRecon(){ if(!cur)return; mode='recon'; view='brain';
-    scan={nodes:[{id:'p',label:cur.name,fam:'project',on:true}],edges:[],events:[],phase:(cur.runtime&&cur.runtime.phase)||'planning',cov:(cur.runtime&&cur.runtime.progress)||0,mapped:(cur.runtime&&cur.runtime.mapped_features)||0,planned:(cur.runtime&&cur.runtime.planned_features)||0,done:false,summary:null,mission:cur.active_mission||null,lead:'active',workers:{}};
+    scan={nodes:[{id:'p',label:cur.name,fam:'project',on:true}],edges:[],events:[],phase:(cur.runtime&&cur.runtime.phase)||'planning',cov:(cur.runtime&&cur.runtime.progress)||0,mapped:(cur.runtime&&cur.runtime.mapped_features)||0,planned:(cur.runtime&&cur.runtime.planned_features)||0,workstreams:(cur.runtime&&cur.runtime.planning_workstreams)||0,workstreamsDone:(cur.runtime&&cur.runtime.completed_workstreams)||0,done:false,summary:null,mission:cur.active_mission||null,lead:'active',workers:{}};
     render(); openStream();
   }
   function openStream(){ if(es)es.close(); es=new EventSource('/api/projects/'+encodeURIComponent(cur.id)+'/events'); es.onmessage=m=>onEvent(JSON.parse(m.data)); }
@@ -247,6 +247,10 @@
     if(d.kind==='worker_roster')(d.workers||[]).forEach(w=>scan.workers[w]='available');
     if(d.kind==='worker_started')scan.workers[d.worker]='running';
     if(d.kind==='worker_completed')scan.workers[d.worker]='completed';
+    if(d.kind==='planning_workstreams'){scan.workstreams=d.total||0;scan.workstreamsDone=d.completed||0;}
+    if(d.kind==='workstream_started')scan.workers[d.workstream]='running';
+    if(d.kind==='workstream_completed'){scan.workers[d.workstream]='completed';scan.workstreamsDone=d.completed_workstreams||Math.min(scan.workstreams,scan.workstreamsDone+1);}
+    if(d.kind==='workstream_blocked')scan.workers[d.workstream]='blocked';
     if(d.phase && d.phase!=='done') scan.phase=d.phase;   // 'done' isn't a display phase (server emits it before 'ready')
     if(d.kind==='features_planned'||d.kind==='semantic_plan'){ scan.planned=d.count||d.planned_features||scan.planned; (d.domains||[]).forEach(dm=>{ if(!scan.nodes.find(n=>n.id==='d_'+dm)){ scan.nodes.push({id:'d_'+dm,label:dm,fam:'domain',on:true}); scan.edges.push(['p','d_'+dm]); } }); }
     if(d.kind==='feature_mapped'){ const id='f_'+d.slug+'_'+d.domain; if(!scan.nodes.find(n=>n.id===id)){ scan.nodes.push({id,label:d.feature,fam:'feature',on:true,status:d.rows>0?'mapped':'gap'}); scan.edges.push(['d_'+d.domain,id]); } scan.mapped=d.mapped_features||scan.mapped+1; }
@@ -278,7 +282,7 @@
   }
   function pside(){ const el=$('side'); if(!el)return; const pi=PHASES.findIndex(p=>p[0]===scan.phase);
     const workers=Object.entries(scan.workers);
-    el.innerHTML=`<div><div class="lead"><span class="leaddot"></span><b style="font-family:var(--font-heading);font-size:16px">Lead session</b><span class="tag tag-accent" style="margin-left:auto">${scan.done?'sealed':scan.lead?'active':'planning'}</span></div><p class="muted" style="font-size:12px;margin-top:6px">${scan.lead?`session ${esc(String(scan.lead).slice(0,18))}`:AI?'Claude Agent SDK · waiting for session':'Semantic planning blocked (connect Claude)'} · ${scan.planned||0} features</p></div>
+    el.innerHTML=`<div><div class="lead"><span class="leaddot"></span><b style="font-family:var(--font-heading);font-size:16px">Semantic mapping</b><span class="tag tag-accent" style="margin-left:auto">${scan.done?'sealed':scan.workstreams?`${scan.workstreamsDone}/${scan.workstreams}`:scan.lead?'active':'planning'}</span></div><p class="muted" style="font-size:12px;margin-top:6px">${scan.workstreams?`${scan.workstreams} bounded workstreams · ${Object.values(scan.workers).filter(x=>x==='running').length} active`:scan.lead?`holistic session ${esc(String(scan.lead).slice(0,18))}`:AI?'Claude Agent SDK · preparing plan':'Semantic planning blocked (connect Claude)'} · ${scan.planned||0} features</p></div>
       ${workers.length?`<div><div class="h4lbl">Recon teammates</div><div style="display:flex;gap:6px;flex-wrap:wrap">${workers.map(([w,s])=>`<span class="worker"><span class="wk-dot" style="background:${s==='completed'?'var(--ok)':s==='running'?'var(--active)':'var(--color-divider)'}"></span>${esc(w)} · ${esc(s)}</span>`).join('')}</div></div>`:''}
       <div><div class="h4lbl">Recon phases</div>${PHASES.map((p,i)=>`<div class="phase ${scan.done||i<pi?'done':i===pi?'now':''}"><span class="n">${scan.done||i<pi?'✓':i+1}</span>${p[1]}</div>`).join('')}</div>
       <div><div class="h4lbl">Coverage</div><div class="bigbar"><i style="width:${scan.cov}%"></i></div><div style="display:flex;justify-content:space-between;font-size:12px;margin-top:6px"><span class="muted">${scan.mapped}/${scan.planned||'?'} features mapped</span><b class="nums">${scan.cov}%</b></div></div>
@@ -292,7 +296,7 @@
     const rail=`<nav class="rail">${navList().map(([k,l,c])=>`<div class="navitem" ${k===view?'aria-current="page"':''} onclick="setView('${k}')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75">${ic[k]}</svg><span>${l}</span>${c!==''?`<span class="cnt nums">${c}</span>`:''}</div>`).join('')}<div style="margin-top:auto;padding:12px"><div class="tag tag-accent-2" style="width:100%;justify-content:center">Recon only</div></div></nav>`;
     const g=PD?PD.brain.counts:{nodes:0,edges:0,claims:0};
     const pub=PD&&PD.publication;
-    const strip=`<footer class="strip"><div class="seg2" title="${pub?esc(pub.mission_id):''}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.75"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg><b style="font-family:var(--font-heading)">Lead</b><span class="muted">${pub&&(pub.executed_planner==='agent-lead'||pub.executed_planner==='sealed-plan-reuse')?'Claude planning':'Semantic blocked'}</span></div><div class="sep"></div><div class="seg2"><span class="muted">Workstreams</span><span class="tag tag-accent">${pub?pub.workstreams||0:0} sealed</span></div><div class="sep"></div><div class="seg2"><span class="muted">Coverage</span><span class="bar"><i style="width:${PD?PD.cov:0}%"></i></span><b class="nums">${PD?PD.cov:0}%</b></div><div class="sep"></div><div class="seg2 ticker"><span class="ev"><span class="mono" style="color:var(--color-accent)">${pub&&pub.sealed_at?esc(pub.sealed_at.slice(11,19)):'—'}</span> <span class="muted">Brain sealed · ${PD&&PD.dashboard?PD.dashboard.features.length:0} features · ${PD?['ENDPOINT','ROUTE','GRAPHQL_OPERATION','JOB'].reduce((n,k)=>n+(PD.inventory.totals[k]||0),0):0} interfaces · ${g.claims} cited claims</span></span></div></footer>`;
+    const strip=`<footer class="strip"><div class="seg2" title="${pub?esc(pub.mission_id):''}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2.75"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg><b style="font-family:var(--font-heading)">Lead</b><span class="muted">${pub&&(['agent-lead','agent-workstreams','sealed-plan-reuse'].includes(pub.executed_planner))?'Claude planning':'Semantic blocked'}</span></div><div class="sep"></div><div class="seg2"><span class="muted">Workstreams</span><span class="tag tag-accent">${pub?(pub.planning_workstreams||pub.workstreams||0):0} planning · ${pub?pub.workstreams||0:0} features</span></div><div class="sep"></div><div class="seg2"><span class="muted">Coverage</span><span class="bar"><i style="width:${PD?PD.cov:0}%"></i></span><b class="nums">${PD?PD.cov:0}%</b></div><div class="sep"></div><div class="seg2 ticker"><span class="ev"><span class="mono" style="color:var(--color-accent)">${pub&&pub.sealed_at?esc(pub.sealed_at.slice(11,19)):'—'}</span> <span class="muted">Brain sealed · ${PD&&PD.dashboard?PD.dashboard.features.length:0} features · ${PD?['ENDPOINT','ROUTE','GRAPHQL_OPERATION','JOB'].reduce((n,k)=>n+(PD.inventory.totals[k]||0),0):0} interfaces · ${g.claims} cited claims</span></span></div></footer>`;
     let inner = view==='brain'?brainView() : (view==='features'&&featOpen)?featureDetailView() : `<div>${(VIEWS[view]||VIEWS.features)()}</div>`;
     return `<div class="pbody">${rail}<main class="main">${inner}</main>${strip}</div>`;
   }

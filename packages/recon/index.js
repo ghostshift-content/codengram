@@ -411,7 +411,9 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   // Deterministic technical clusters — the FACTS. Used as (a) the Lead's context-budget scaffolding to consolidate
   // into features at any repo size, and (b) the blocked-mode architecture when no semantic plan is produced.
   const candidateClusters = deterministicSemanticPlan(inventories)
-  const clusterSummary = summarizeClusters(candidateClusters)
+  // Keep the complete bounded-per-cluster summary. The Claude runtime decides whether it fits one holistic session or
+  // must be partitioned into durable workstreams; globally truncating to 400 clusters silently hid repository areas.
+  const clusterSummary = summarizeClusters(candidateClusters, { maxClusters: Number.MAX_SAFE_INTEGER })
   let lead = null, featurePlan = null, archClusters = [], ontology = null, executedPlanner = 'blocked', semantic = false, model = null
   let failureReason = null, validation = null
   if (reused) try {
@@ -422,7 +424,9 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
     }
   } catch {}
   if (!featurePlan && agentic && (planLead || await claudeAvailable())) {
-    const r = await planReconWithRetry({ sourceRoot: src, profile, inventoryCounts: invCounts, candidateClusters: clusterSummary, fn: planLead,
+    const planningDir = path.join(snapDir, 'planning', planFingerprint)
+    const r = await planReconWithRetry({ sourceRoot: src, profile, inventoryCounts: invCounts, candidateClusters: clusterSummary,
+      checkpointDir: planningDir, fn: planLead,
       resume: existingPublication?.lead_session_id || previousPublication?.lead_session_id || null, onEvent: onProgress })
     lead = r.lead; model = r.model; failureReason = r.failureReason
     if (lead?.plan) {
@@ -438,7 +442,7 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
           const original = vres.ontology.features.find((x) => slug(x.slug || x.name) === f.slug)
           return original ? { ...original, slug: f.slug, domain: f.domain, name: f.name, purpose: f.purpose } : f
         }) }
-        executedPlanner = 'agent-lead'
+        executedPlanner = lead?.workstreams?.total ? 'agent-workstreams' : 'agent-lead'
         semantic = true
         validation = { ok: true, features: validated.features.length, ...vres.accepted,
           rejected: vres.rejected.length, rejections: vres.rejected.slice(0, 40) }
@@ -460,12 +464,13 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
   const plannerName = semantic ? (executedPlanner === 'sealed-plan-reuse' ? 'sealed-plan-reuse' : 'claude-agent-sdk') : 'blocked'
   const planProvenance = { requested_planner: requestedPlanner, executed_planner: executedPlanner, semantic,
     lead_session_id: lead?.sessionId || null, model, failure_reason: failureReason,
+    planning_runtime: lead?.workstreams || { total: semantic ? 1 : 0, completed: semantic ? 1 : 0, blocked: 0 },
     recon_skill: lead?.reconSkill || skillInfo,
     fallback_reason: semantic ? null : 'semantic planning blocked — published technical architecture only (no business features)',
     validation_result: validation, prompt_version: PROMPT_VERSION, planner_version: PLANNER_VERSION, versions }
   onProgress({ kind: 'semantic_plan', count: semantic ? featurePlan.length : 0, technical_clusters: semantic ? 0 : featurePlan.length,
     session_id: lead?.sessionId || null, method: executedPlanner, semantic, blocked: !semantic,
-    label: semantic ? `Lead planned ${featurePlan.length} source-grounded business features`
+    label: semantic ? `${executedPlanner === 'agent-workstreams' ? 'Semantic workers' : 'Lead'} planned ${featurePlan.length} source-grounded business features`
       : `Semantic planning BLOCKED (${failureReason}) — preserving ${featurePlan.length} technical cluster(s) as architecture` })
   // Content-addressed: if this exact snapshot id was already published, the source is UNCHANGED (a re-verify, not new work).
   if (reused) onProgress({ kind: 'reused', label: 'Source unchanged since the last scan — re-verifying the same snapshot' })
@@ -523,7 +528,8 @@ export async function scanSnapshot(dataRoot, projectId, { snapshotId, onPhase = 
     const pubId = crypto.createHash('sha256').update(`${missionId}:${crypto.randomUUID()}`).digest('hex').slice(0, 16)
     const publication = { state: result.gate.status, published: true, mission_id: missionId,
       lead_session_id: lead?.sessionId || null, planner: plannerName, ...planProvenance,
-      workstreams: featurePlan.length, semantic_coverage: result.coverage.semantic_coverage, technical_coverage: result.coverage.technical_coverage,
+      workstreams: featurePlan.length, planning_workstreams: planProvenance.planning_runtime.total,
+      semantic_coverage: result.coverage.semantic_coverage, technical_coverage: result.coverage.technical_coverage,
       technical_clusters: result.coverage.technical_clusters,
       gate: result.gate.status, gaps: result.gate.gaps, crosscheck, graph: merged, features: result.coverage.feature_count, reconciled: result.coverage.reconciled, reused, sealed_at: new Date().toISOString() }
     sealPublish(snapDir, attempt, pubId, publication)

@@ -20,6 +20,15 @@ let _claudePath
 // mid-plan and retrying. Default to 10 min so the first attempt has room to succeed; override with CODENGRAM_AI_TIMEOUT_MS.
 const SDK_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODENGRAM_AI_TIMEOUT_MS) || 600_000)
 const PLAN_TIMEOUT_MS = Math.max(60_000, Number(process.env.CODENGRAM_PLAN_TIMEOUT_MS) || 1_800_000)
+const WORKSTREAM_TIMEOUT_MS = Math.max(60_000, Number(process.env.CODENGRAM_WORKSTREAM_TIMEOUT_MS) || 900_000)
+// Speed: run more workstreams in parallel (4-wide default; 6 ceiling for those with quota headroom) and make each
+// workstream BIGGER (fewer, fatter sessions), so a huge repo finishes in a handful of rounds instead of dozens.
+const WORKSTREAM_CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.CODENGRAM_WORKSTREAM_CONCURRENCY) || 4))
+// A single Lead session gets the FULL cluster summary (no truncation), and Claude's context easily holds ~250KB of it
+// (~60K tokens) alongside the methodology + spot-checks. So keep GitLab-scale repos on the FAST, coherent single-Lead
+// path — only fan out into workstreams when the summary genuinely won't fit one session. 60KB was needlessly tight.
+const HOLISTIC_SUMMARY_BYTES = Math.max(20_000, Number(process.env.CODENGRAM_HOLISTIC_SUMMARY_BYTES) || 250_000)
+const WORKSTREAM_SUMMARY_BYTES = Math.max(12_000, Number(process.env.CODENGRAM_WORKSTREAM_SUMMARY_BYTES) || 80_000)
 const MODEL = process.env.CODENGRAM_MODEL || 'claude-agent-sdk'   // recorded in provenance; SDK owns the concrete model
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_RECON_SKILL = path.resolve(MODULE_DIR, '../../skills/phase1-feature-map')
@@ -184,9 +193,198 @@ const PLAN_SCHEMA = {
 
 const READ_TOOLS = ['Read', 'Glob', 'Grep']
 
+const jsonBytes = (value) => Buffer.byteLength(JSON.stringify(value))
+const uniq = (values) => [...new Set((values || []).filter((x) => x != null && String(x).trim() !== ''))]
+const itemKey = (value) => JSON.stringify(value)
+const uniqObjects = (values) => {
+  const seen = new Set()
+  return (values || []).filter((value) => { const key = itemKey(value); if (seen.has(key)) return false; seen.add(key); return true })
+}
+
+// Turn the complete technical-cluster summary into bounded, coherent planning units. The grouping key preserves domain
+// and top-level path locality; packing is byte-budgeted so repository size, not feature count, controls fanout.
+export function createReconWorkstreams(candidateClusters = [], { maxBytes = WORKSTREAM_SUMMARY_BYTES, maxClusters = 60 } = {}) {
+  const groups = new Map()
+  for (const cluster of candidateClusters || []) {
+    const firstPath = String(cluster.paths?.[0] || '')
+    const locality = firstPath.split('/').filter(Boolean).slice(0, 2).join('/') || 'root'
+    const key = `${cluster.domain || 'core'}:${locality}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(cluster)
+  }
+  // First make indivisible locality chunks, splitting only a locality that cannot fit one context budget. Then
+  // first-fit-pack small chunks together. This avoids both cross-cutting a domain and creating dozens of one-cluster
+  // sessions for auxiliary build/docs/config areas in a monorepo.
+  const chunks = []
+  for (const [locality, clusters] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    let batch = [], bytes = 2
+    const flush = () => {
+      if (!batch.length) return
+      chunks.push({ locality, domain: locality.split(':')[0], clusters: batch, cluster_count: batch.length,
+        summary_bytes: bytes, paths: uniq(batch.flatMap((c) => c.paths || [])).slice(0, 80) })
+      batch = []; bytes = 2
+    }
+    for (const cluster of clusters.sort((a, b) => String(a.slug).localeCompare(String(b.slug)))) {
+      const size = jsonBytes(cluster) + 1
+      if (batch.length && (bytes + size > maxBytes || batch.length >= maxClusters)) flush()
+      batch.push(cluster); bytes += size
+    }
+    flush()
+  }
+  const bins = []
+  for (const chunk of chunks.sort((a, b) => b.summary_bytes - a.summary_bytes)) {
+    let bin = bins.find((candidate) => candidate.domain === chunk.domain
+      && candidate.summary_bytes + chunk.summary_bytes <= maxBytes
+      && candidate.cluster_count + chunk.cluster_count <= maxClusters)
+    if (!bin) { bin = { domain: chunk.domain, chunks: [], clusters: [], cluster_count: 0, summary_bytes: 2, paths: [] }; bins.push(bin) }
+    bin.chunks.push(chunk.locality); bin.clusters.push(...chunk.clusters); bin.cluster_count += chunk.cluster_count
+    bin.summary_bytes += chunk.summary_bytes; bin.paths = uniq([...bin.paths, ...chunk.paths]).slice(0, 100)
+  }
+  return bins.map((bin, index) => ({ id: `ws-${String(index + 1).padStart(3, '0')}`,
+    locality: bin.chunks.length === 1 ? bin.chunks[0] : `${bin.domain}:mixed-${bin.chunks.length}`,
+    localities: bin.chunks, clusters: bin.clusters, cluster_count: bin.cluster_count,
+    summary_bytes: bin.summary_bytes, paths: bin.paths }))
+}
+
+function mergeNamed(items, keyFn, arrayFields = []) {
+  const merged = new Map()
+  for (const item of items || []) {
+    const key = keyFn(item)
+    if (!key) continue
+    if (!merged.has(key)) { merged.set(key, { ...item }); continue }
+    const current = merged.get(key)
+    for (const field of arrayFields) current[field] = field === 'evidence'
+      ? uniqObjects([...(current[field] || []), ...(item[field] || [])])
+      : uniq([...(current[field] || []), ...(item[field] || [])])
+    for (const [field, value] of Object.entries(item)) if ((current[field] == null || current[field] === '') && value != null) current[field] = value
+  }
+  return [...merged.values()]
+}
+
+// Worker outputs are already evidence-scoped. Merge by stable semantic identity while retaining every selector and
+// citation; the normal evidence validator remains the final authority before anything enters the graph.
+export function mergeReconPlans(plans = [], extraGaps = []) {
+  const all = plans.filter(Boolean)
+  return {
+    features: mergeNamed(all.flatMap((p) => p.features || []), (f) => `${String(f.domain || 'core').toLowerCase()}/${String(f.slug || f.name || '').toLowerCase()}`,
+      ['include_paths', 'include_terms', 'include_symbols', 'include_entries', 'inventory_keys', 'exclude_paths', 'exclude_terms', 'actors', 'permissions', 'evidence']),
+    actors: mergeNamed(all.flatMap((p) => p.actors || []), (a) => String(a.name || '').toLowerCase(), ['scopes', 'evidence']),
+    roles: mergeNamed(all.flatMap((p) => p.roles || []), (r) => String(r.name || '').toLowerCase(), ['enables', 'evidence']),
+    permissions: mergeNamed(all.flatMap((p) => p.permissions || []), (p) => String(p.name || '').toLowerCase(), ['enabled_by_roles', 'granted_to_actors', 'evidence']),
+    relationships: uniqObjects(all.flatMap((p) => p.relationships || [])),
+    gaps: uniq([...all.flatMap((p) => p.gaps || []), ...extraGaps]),
+  }
+}
+
+const atomicJson = (file, value) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`)
+  fs.renameSync(tmp, file)
+}
+const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null } }
+
+async function runPool(items, concurrency, worker) {
+  const results = new Array(items.length)
+  let cursor = 0
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) { const index = cursor++; results[index] = await worker(items[index], index) }
+  }))
+  return results
+}
+
+export async function planReconWorkstreams({ query, executable, sourceRoot, profile, inventoryCounts, workstreams, skill,
+  checkpointDir, onEvent }) {
+  if (checkpointDir) {
+    fs.mkdirSync(checkpointDir, { recursive: true })
+    atomicJson(path.join(checkpointDir, 'manifest.json'), { version: 1, model: MODEL, workstreams: workstreams.map(({ clusters, ...w }) => w) })
+  }
+  onEvent({ kind: 'planning_workstreams', total: workstreams.length, completed: 0,
+    label: `Large repository split into ${workstreams.length} bounded semantic workstream(s); ${WORKSTREAM_CONCURRENCY} active at a time` })
+
+  const results = await runPool(workstreams, WORKSTREAM_CONCURRENCY, async (workstream) => {
+    const stateFile = checkpointDir ? path.join(checkpointDir, `${workstream.id}.json`) : null
+    const saved = stateFile ? readJson(stateFile) : null
+    if (saved?.status === 'COMPLETED' && saved.plan?.features?.length) {
+      onEvent({ kind: 'workstream_completed', workstream: workstream.id, resumed: true, count: saved.plan.features.length,
+        label: `${workstream.id} restored from checkpoint · ${saved.plan.features.length} feature(s)` })
+      return { ok: true, plan: saved.plan, sessionId: saved.session_id || null, resumed: true }
+    }
+
+    let lastError = null, resume = saved?.session_id || null, lastActivityAt = 0
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const started = new Date().toISOString()
+      onEvent({ kind: 'workstream_started', workstream: workstream.id, attempt: attempt + 1, locality: workstream.locality,
+        cluster_count: workstream.cluster_count, label: `${workstream.id} mapping ${workstream.locality} (${workstream.cluster_count} technical clusters)` })
+      if (stateFile) atomicJson(stateFile, { status: 'RUNNING', attempt: attempt + 1, session_id: resume, started_at: started,
+        locality: workstream.locality, cluster_count: workstream.cluster_count })
+      const prompt = `You are a Codengram semantic-mapping worker. Map ONLY the bounded repository workstream below.
+Do not inspect unrelated areas and do not delegate to other agents. Produce coherent business capabilities, not files,
+classes, folders, tests, serializers, implementation nouns or vulnerability findings. Group every interface, service,
+model, worker, policy and UI path in this workstream into its real capability. Derive actors, roles and permissions only
+when grounded by authoritative production source. Every entity must cite a real file and line. Anything uncertain is a gap.
+
+Repository profile: ${JSON.stringify(profile)}
+Inventory counts for the whole repository: ${JSON.stringify(inventoryCounts)}
+WORKSTREAM: ${JSON.stringify({ id: workstream.id, locality: workstream.locality, paths: workstream.paths, clusters: workstream.clusters })}
+
+AUTHORITATIVE RECON METHODOLOGY:
+${skill.text}`
+      let structured = null, sessionId = resume
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), WORKSTREAM_TIMEOUT_MS)
+      try {
+        for await (const msg of query({ prompt, options: timedOptions({ cwd: sourceRoot, ...(resume ? { resume } : {}),
+          ...(executable ? { pathToClaudeCodeExecutable: executable } : {}), tools: READ_TOOLS, allowedTools: READ_TOOLS,
+          disallowedTools: ['Write', 'Edit', 'Bash', 'NotebookEdit', 'Agent'], permissionMode: 'default', maxTurns: 28,
+          outputFormat: { type: 'json_schema', schema: PLAN_SCHEMA } }, controller) })) {
+          if (msg?.type === 'system' && msg?.subtype === 'init') {
+            sessionId = msg.session_id || sessionId
+            if (stateFile) atomicJson(stateFile, { status: 'RUNNING', attempt: attempt + 1, session_id: sessionId,
+              started_at: started, locality: workstream.locality, cluster_count: workstream.cluster_count })
+          }
+          if (msg?.type === 'assistant' && Date.now() - lastActivityAt >= 2_000) {
+            lastActivityAt = Date.now()
+            onEvent({ kind: 'workstream_activity', workstream: workstream.id,
+              label: `${workstream.id} is reading and reconciling ${workstream.locality}` })
+          }
+          if (msg?.type === 'result') structured = msg.structured_output || structured
+        }
+        const safe = structured?.features?.filter((f) => isReconFeatureLabel(f?.name)) || []
+        if (!safe.length) throw new Error('worker produced no grounded recon-safe features')
+        const plan = { ...structured, features: safe }
+        if (stateFile) atomicJson(stateFile, { status: 'COMPLETED', attempt: attempt + 1, session_id: sessionId,
+          started_at: started, finished_at: new Date().toISOString(), locality: workstream.locality, plan })
+        onEvent({ kind: 'workstream_completed', workstream: workstream.id, count: safe.length,
+          label: `${workstream.id} completed · ${safe.length} feature(s)` })
+        return { ok: true, plan, sessionId }
+      } catch (error) {
+        lastError = String(error?.message || error)
+        resume = attempt === 0 ? sessionId : null
+        if (stateFile) atomicJson(stateFile, { status: 'FAILED_RETRYABLE', attempt: attempt + 1, session_id: resume,
+          started_at: started, failed_at: new Date().toISOString(), locality: workstream.locality, error: lastError })
+        onEvent({ kind: 'workstream_retry', workstream: workstream.id, attempt: attempt + 1,
+          label: `${workstream.id} attempt ${attempt + 1} failed${attempt === 0 ? ' · resuming checkpoint' : ''}` })
+      } finally { clearTimeout(timer) }
+    }
+    if (stateFile) atomicJson(stateFile, { status: 'BLOCKED', session_id: resume, locality: workstream.locality,
+      failed_at: new Date().toISOString(), error: lastError })
+    onEvent({ kind: 'workstream_blocked', workstream: workstream.id, label: `${workstream.id} blocked · ${lastError}` })
+    return { ok: false, error: lastError, workstream }
+  })
+
+  const completed = results.filter((r) => r?.ok)
+  if (!completed.length) return null
+  const failed = results.filter((r) => !r?.ok)
+  const gaps = failed.map((r) => `semantic workstream ${r.workstream.id} (${r.workstream.locality}) did not complete: ${r.error}`)
+  return { plan: mergeReconPlans(completed.map((r) => r.plan), gaps), sessionId: null, model: MODEL,
+    reconSkill: reconSkillInfo(), workstreams: { total: workstreams.length, completed: completed.length, blocked: failed.length } }
+}
+
 // One persistent Lead owns project understanding and may delegate read-only reconnaissance to specialist subagents.
 // It returns selectors, not ungrounded graph rows; the caller validates and reconciles every inventory item.
-export async function planRecon({ sourceRoot, profile, inventoryCounts, candidateClusters = null, resume = null, onEvent = () => {} }) {
+export async function planRecon({ sourceRoot, profile, inventoryCounts, candidateClusters = null, resume = null,
+  checkpointDir = null, onEvent = () => {} }) {
   const sdk = await loadSdk()
   const query = sdk?.query || sdk?.default?.query
   if (typeof query !== 'function') return null
@@ -211,6 +409,16 @@ export async function planRecon({ sourceRoot, profile, inventoryCounts, candidat
   catch (error) {
     onEvent({ kind: 'lead_contract', blocked: true, label: String(error?.message || error) })
     return null
+  }
+  const summaryBytes = jsonBytes(candidateClusters || [])
+  // Decide by whether the cluster SUMMARY fits one session — the real context-fit criterion. Raw file/inventory counts
+  // are misleading proxies: GitLab (87k files) fit one Lead beautifully, so fanning out on file count alone made it
+  // slow for no reason. Only fan out when the summary itself is too big for a single coherent pass.
+  const useWorkstreams = summaryBytes > HOLISTIC_SUMMARY_BYTES
+  if (useWorkstreams) {
+    const workstreams = createReconWorkstreams(candidateClusters || [])
+    return planReconWorkstreams({ query, executable: claudeExecutable(), sourceRoot, profile, inventoryCounts,
+      workstreams, skill, checkpointDir, onEvent })
   }
   const prompt = `You are the persistent Lead for a codebase-recon mission.
 Repository profile: ${JSON.stringify(profile)}

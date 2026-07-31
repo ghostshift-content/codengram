@@ -82,7 +82,11 @@ test('recon progress advances by phase and then by mapped feature count', () => 
   const state = { phase: 'start' }
   assert.equal(missionProgress(state, { phase: 'freeze' }), 5)
   assert.equal(missionProgress(state, { phase: 'planning' }), 40)
-  assert.equal(missionProgress(state, { kind: 'features_planned', count: 4 }), 40)
+  state.phase = 'planning'
+  assert.equal(missionProgress(state, { kind: 'planning_workstreams', total: 4, completed: 0 }), 40)
+  assert.equal(missionProgress(state, { kind: 'workstream_completed' }), 42)
+  assert.equal(missionProgress(state, { kind: 'workstream_completed' }), 45)
+  assert.equal(missionProgress(state, { kind: 'features_planned', count: 4 }), 45)
   state.phase = 'graph'
   assert.equal(missionProgress(state, { kind: 'feature_mapped' }), 58)
   assert.equal(missionProgress(state, { kind: 'feature_mapped' }), 65)

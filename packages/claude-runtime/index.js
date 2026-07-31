@@ -29,7 +29,9 @@ const WORKSTREAM_CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.CODENG
 // path — only fan out into workstreams when the summary genuinely won't fit one session. 60KB was needlessly tight.
 const HOLISTIC_SUMMARY_BYTES = Math.max(20_000, Number(process.env.CODENGRAM_HOLISTIC_SUMMARY_BYTES) || 250_000)
 const WORKSTREAM_SUMMARY_BYTES = Math.max(12_000, Number(process.env.CODENGRAM_WORKSTREAM_SUMMARY_BYTES) || 80_000)
-const MODEL = process.env.CODENGRAM_MODEL || 'claude-agent-sdk'   // recorded in provenance; SDK owns the concrete model
+// Hardcoded model for every SDK call (Lead + workstream workers + subagents + ask-time); recorded verbatim in
+// provenance. Verified available on the subscription. Overridable via CODENGRAM_MODEL.
+const MODEL = process.env.CODENGRAM_MODEL || 'claude-opus-4-6'
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_RECON_SKILL = path.resolve(MODULE_DIR, '../../skills/phase1-feature-map')
 
@@ -141,7 +143,7 @@ export async function askClaude({ preamble, question, bundle }) {
     // Read-only session: no tools that could write or run repo code. The SDK owns auth.
     const executable = claudeExecutable()
     try {
-      for await (const msg of query({ prompt, options: timedOptions({ allowedTools: [], permissionMode: 'default', maxTurns: 6,
+      for await (const msg of query({ prompt, options: timedOptions({ allowedTools: [], permissionMode: 'default', maxTurns: 6, model: MODEL,
         ...(executable ? { pathToClaudeCodeExecutable: executable } : {}) }, controller) })) {
         if (msg?.type === 'result' && typeof msg.result === 'string') text += msg.result
         else if (msg?.type === 'assistant') for (const b of msg.message?.content || []) if (b.type === 'text') text += b.text
@@ -334,7 +336,7 @@ ${skill.text}`
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), WORKSTREAM_TIMEOUT_MS)
       try {
-        for await (const msg of query({ prompt, options: timedOptions({ cwd: sourceRoot, ...(resume ? { resume } : {}),
+        for await (const msg of query({ prompt, options: timedOptions({ cwd: sourceRoot, ...(resume ? { resume } : {}), model: MODEL,
           ...(executable ? { pathToClaudeCodeExecutable: executable } : {}), tools: READ_TOOLS, allowedTools: READ_TOOLS,
           disallowedTools: ['Write', 'Edit', 'Bash', 'NotebookEdit', 'Agent'], permissionMode: 'default', maxTurns: 28,
           outputFormat: { type: 'json_schema', schema: PLAN_SCHEMA } }, controller) })) {
@@ -390,13 +392,13 @@ export async function planRecon({ sourceRoot, profile, inventoryCounts, candidat
   if (typeof query !== 'function') return null
   const agents = {
     architecture: { description: 'Map architecture, boundaries, processes and major subsystems.', tools: READ_TOOLS,
-      prompt: 'Read the repository structure and identify coherent architectural domains. Recon only. Cite paths; do not discuss vulnerabilities.', model: 'inherit' },
+      prompt: 'Read the repository structure and identify coherent architectural domains. Recon only. Cite paths; do not discuss vulnerabilities.', model: MODEL },
     domains: { description: 'Discover user-facing business capabilities and consolidate related implementation.', tools: READ_TOOLS,
-      prompt: 'Map coherent business features, grouping routes, GraphQL, workers, services, models and policies that implement the same capability. Avoid file-name-as-feature output.', model: 'inherit' },
+      prompt: 'Map coherent business features, grouping routes, GraphQL, workers, services, models and policies that implement the same capability. Avoid file-name-as-feature output.', model: MODEL },
     identity: { description: 'Map actors, authentication, roles, permissions and policy boundaries.', tools: READ_TOOLS,
-      prompt: 'Map identity and authorization structure with grounded paths. Recon only; never infer a role without source evidence.', model: 'inherit' },
+      prompt: 'Map identity and authorization structure with grounded paths. Recon only; never infer a role without source evidence.', model: MODEL },
     interfaces: { description: 'Map REST, GraphQL, jobs, webhooks, imports, exports and integrations.', tools: READ_TOOLS,
-      prompt: 'Map external and internal interfaces and connect them to business capabilities. Cite repository paths.', model: 'inherit' },
+      prompt: 'Map external and internal interfaces and connect them to business capabilities. Cite repository paths.', model: MODEL },
   }
   // CONTEXT-BUDGET SCAFFOLDING: for a large repo we hand the Lead a BOUNDED summary of the deterministic technical
   // clusters (name/domain/paths/counts/samples) and ask it to CONSOLIDATE them into business features — it never has to
@@ -466,7 +468,7 @@ ${skill.text}`
     const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
     const executable = claudeExecutable()
     onEvent({ kind: 'worker_roster', workers: Object.keys(agents), label: 'Lead prepared architecture, domain, identity and interface workers' })
-    try { for await (const msg of query({ prompt, options: timedOptions({ cwd: sourceRoot, ...(resume ? { resume } : {}),
+    try { for await (const msg of query({ prompt, options: timedOptions({ cwd: sourceRoot, ...(resume ? { resume } : {}), model: MODEL,
       ...(executable ? { pathToClaudeCodeExecutable: executable } : {}), tools: [...READ_TOOLS, 'Agent'], allowedTools: [...READ_TOOLS, 'Agent'],
       disallowedTools: ['Write', 'Edit', 'Bash', 'NotebookEdit'], permissionMode: 'default', maxTurns: 40,
       agents, outputFormat: { type: 'json_schema', schema: PLAN_SCHEMA } }, controller) })) {

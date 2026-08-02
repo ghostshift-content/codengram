@@ -255,7 +255,7 @@
     if(d.kind==='features_planned'||d.kind==='semantic_plan'){ scan.planned=d.count||d.planned_features||scan.planned; (d.domains||[]).forEach(dm=>{ if(!scan.nodes.find(n=>n.id==='d_'+dm)){ scan.nodes.push({id:'d_'+dm,label:dm,fam:'domain',on:true}); scan.edges.push(['p','d_'+dm]); } }); }
     if(d.kind==='feature_mapped'){ const id='f_'+d.slug+'_'+d.domain; if(!scan.nodes.find(n=>n.id===id)){ scan.nodes.push({id,label:d.feature,fam:'feature',on:true,status:d.rows>0?'mapped':'gap'}); scan.edges.push(['d_'+d.domain,id]); } scan.mapped=d.mapped_features||scan.mapped+1; }
     if(Number.isFinite(d.progress)) scan.cov=d.progress;
-    if(d.phase==='ready'){ scan.done=true; scan.summary=d.summary; scan.cov=(d.summary&&d.summary.semantic_coverage!=null)?d.summary.semantic_coverage:scan.cov; if(es){es.close();es=null;}
+    if(d.phase==='ready'){ scan.done=true; scan.summary=d.summary; scan.cov=100; if(es){es.close();es=null;}   // mapping complete → progress bar is 100% (coverage % is shown separately in the gate summary)
       if(mode==='recon'){ render(); return; }   // rebuild the recon view so the gate shows the scan id + real stats
     }
     if(mode==='recon'){ drawScan(); pside();
